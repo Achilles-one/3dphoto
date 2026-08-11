@@ -9,6 +9,10 @@ export type StereoLayout = 'auto' | 'side-by-side' | 'top-bottom';
 
 export type ExportSize = 'small' | 'medium' | 'large';
 
+export type ExportFormat = 'gif' | 'sbs';
+
+export type InputFormat = 'jpeg' | 'png' | 'mpo';
+
 export type AppErrorCode =
   | 'unsupported-file'
   | 'file-read-failed'
@@ -19,13 +23,25 @@ export type AppErrorCode =
   | 'mpo-invalid'
   | 'mpo-insufficient-views'
   | 'mpo-decode-failed'
-  | 'mpo-extra-images';
+  | 'mpo-extra-images'
+  | 'sbs-dimensions-mismatch';
 
 export interface UploadedFileInfo {
   name: string;
   size: number;
   type: string;
   lastModified: number;
+}
+
+export interface InputDetection {
+  format: InputFormat;
+  leftWidth: number;
+  leftHeight: number;
+  rightWidth: number;
+  rightHeight: number;
+  usedImageCount: number;
+  totalImageCount?: number;
+  orientations?: [number, number];
 }
 
 export interface UserFacingError {
@@ -53,6 +69,7 @@ export interface AppState {
   selectedFile: UploadedFileInfo | null;
   processedImage: ProcessedImageInfo | null;
   stereoSplit: StereoSplitResult | null;
+  detection: InputDetection | null;
   error: UserFacingError | null;
   settings: WiggleSettings;
 }

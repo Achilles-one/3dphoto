@@ -16,7 +16,9 @@ const props = defineProps<{
 
 const canvasElement = ref<HTMLCanvasElement | null>(null);
 const canvasShell = ref<HTMLDivElement | null>(null);
+const previewStage = ref<HTMLDivElement | null>(null);
 const renderer = ref<WiggleRenderer | null>(null);
+let resizeObserver: ResizeObserver | null = null;
 
 const hasPreview = computed(() => Boolean(props.selectedFile && props.stereoSplit));
 const canvasAspectRatio = computed(() => {
@@ -36,12 +38,19 @@ function ensureRenderer() {
 function resizeCanvas() {
   const activeRenderer = ensureRenderer();
   const shell = canvasShell.value;
+  const stage = previewStage.value;
+  const view = props.stereoSplit?.leftView;
 
-  if (!activeRenderer || !shell) {
+  if (!activeRenderer || !shell || !stage || !view) {
     return;
   }
 
-  activeRenderer.setSize(shell.clientWidth, shell.clientHeight);
+  const ratio = view.width / view.height;
+  const width = Math.max(1, Math.min(stage.clientWidth, stage.clientHeight * ratio));
+  const height = Math.max(1, Math.round(width / ratio));
+  shell.style.width = `${Math.round(width)}px`;
+  shell.style.height = `${height}px`;
+  activeRenderer.setSize(width, height);
 }
 
 async function renderPreview() {
@@ -53,6 +62,11 @@ async function renderPreview() {
   }
 
   resizeCanvas();
+  resizeObserver?.disconnect();
+  resizeObserver = previewStage.value ? new ResizeObserver(resizeCanvas) : null;
+  if (resizeObserver && previewStage.value) {
+    resizeObserver.observe(previewStage.value);
+  }
   activeRenderer.render(props.stereoSplit, props.settings);
 }
 
@@ -70,7 +84,7 @@ watch(
 );
 
 watch(
-  () => [props.settings.speed, props.settings.intensity] as const,
+  () => [props.settings.speed] as const,
   () => {
     if (props.stereoSplit) {
       void renderPreview();
@@ -88,6 +102,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   renderer.value?.destroy();
 });
 </script>
@@ -96,7 +112,7 @@ onBeforeUnmount(() => {
   <section class="preview-panel" aria-labelledby="preview-title">
 
 
-    <div class="preview-stage">
+    <div ref="previewStage" class="preview-stage">
       <template v-if="phase === 'loading'">Preparing preview...</template>
       <template v-else-if="selectedFile && stereoSplit">
         <div

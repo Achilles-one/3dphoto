@@ -2,6 +2,7 @@
 import { ref } from "vue";
 
 import GuideModal from "@/components/GuideModal.vue";
+import PrivacyModal from "@/components/PrivacyModal.vue";
 import { isAcceptedImageFile } from "@/utils/file";
 
 const emit = defineEmits<{
@@ -12,6 +13,7 @@ const emit = defineEmits<{
 const fileInput = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
 const isGuideOpen = ref(false);
+const isPrivacyOpen = ref(false);
 
 function openFilePicker() {
   fileInput.value?.click();
@@ -58,8 +60,17 @@ function handleDrop(event: DragEvent) {
         Turn side-by-side 3D photos into wiggle animations instantly.
       </p>
       <p class="eyebrow">
-        *All data is processed locally and is not sent/saved online.
+        Photos are processed locally in your browser.
       </p>
+      <button class="privacy-link" type="button" @click="isPrivacyOpen = true">
+        Privacy details
+      </button>
+      <a
+        class="privacy-link"
+        href="mailto:?subject=3D%20Photo%20Enhancer%20feedback"
+      >
+        Send feedback
+      </a>
     </header>
 
     <button
@@ -88,5 +99,6 @@ function handleDrop(event: DragEvent) {
     />
 
     <GuideModal v-if="isGuideOpen" @closed="isGuideOpen = false" />
+    <PrivacyModal v-if="isPrivacyOpen" @closed="isPrivacyOpen = false" />
   </section>
 </template>

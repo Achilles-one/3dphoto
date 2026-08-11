@@ -4,36 +4,46 @@ import type {
   GifWorkerRequest,
   GifWorkerResponse,
 } from '@/types/export';
-import type { StereoSplitResult, StereoView } from '@/types/stereo';
+import type { StereoSplitResult } from '@/types/stereo';
 
-import { getScaledAlignmentOffset } from './alignment';
-import { EXPORT_WIDTHS } from './sizePolicy';
-import { getFrameInterval, getIntensityOffset } from './wiggleParams';
+import { createWiggleFrameSequence } from './frameSequence.ts';
+import {
+  drawWiggleFrame,
+  getFrameGeometry,
+  getOrderedViews,
+  MATTE_BACKGROUND,
+} from './renderGeometry.ts';
+import {
+  getExportDimensions,
+  isGifMemoryBudgetExceeded,
+} from './sizePolicy.ts';
+import { getFrameInterval } from './wiggleParams.ts';
 
-function getOrderedViews(
-  stereoSplit: StereoSplitResult,
-  swapEyes: boolean,
-): [StereoView, StereoView] {
-  return swapEyes
-    ? [stereoSplit.rightView, stereoSplit.leftView]
-    : [stereoSplit.leftView, stereoSplit.rightView];
+export interface GifExportProgress {
+  stage: 'preparing' | 'encoding' | 'ready';
+  progress: number;
 }
 
-function getExportDimensions(view: StereoView, exportSize: ExportSize) {
-  const width = EXPORT_WIDTHS[exportSize];
-  const height = Math.max(1, Math.round((view.height / view.width) * width));
-
-  return { width, height };
+export class ExportCanceledError extends Error {
+  constructor() {
+    super('GIF export canceled.');
+    this.name = 'ExportCanceledError';
+  }
 }
 
-function drawExportFrame(
+export interface GifExportTask {
+  promise: Promise<Blob>;
+  cancel: () => void;
+}
+
+function drawFrame(
   stereoSplit: StereoSplitResult,
-  view: StereoView,
-  frameIndex: 0 | 1,
   settings: WiggleSettings,
-  width: number,
-  height: number,
+  exportSize: ExportSize,
+  frame: ReturnType<typeof createWiggleFrameSequence>[number],
 ): ImageData {
+  const views = getOrderedViews(stereoSplit, settings);
+  const dimensions = getExportDimensions(views[0], exportSize);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
 
@@ -41,106 +51,145 @@ function drawExportFrame(
     throw new Error('Canvas 2D context is unavailable.');
   }
 
-  canvas.width = width;
-  canvas.height = height;
-  context.fillStyle = '#172026';
-  context.fillRect(0, 0, width, height);
-
-  const offset = getIntensityOffset(settings.intensity, width);
-  const direction = frameIndex === 0 ? -1 : 1;
-  const overscanWidth = width + offset * 2;
-  const overscanScale = overscanWidth / view.width;
-  const overscanHeight = Math.max(
-    height,
-    Math.round((view.height / view.width) * overscanWidth),
-  );
-  const alignmentOffset = getScaledAlignmentOffset(
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  const geometry = getFrameGeometry(
     stereoSplit,
-    view,
     settings,
-    overscanScale,
+    dimensions.width,
+    dimensions.height,
   );
-  const x = Math.round((width - overscanWidth) / 2 + offset * direction);
-  const y = Math.round((height - overscanHeight) / 2);
 
+  context.fillStyle = MATTE_BACKGROUND;
+  context.fillRect(0, 0, dimensions.width, dimensions.height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(
-    view.canvas,
-    x + alignmentOffset.x,
-    y + alignmentOffset.y,
-    overscanWidth,
-    overscanHeight,
-  );
+  drawWiggleFrame(context, views, geometry, frame);
 
-  return context.getImageData(0, 0, width, height);
+  const imageData = context.getImageData(0, 0, dimensions.width, dimensions.height);
+  canvas.width = 1;
+  canvas.height = 1;
+  return imageData;
 }
 
 export function createGifFrames(
   stereoSplit: StereoSplitResult,
   settings: WiggleSettings,
   exportSize: ExportSize,
+  onProgress?: (progress: GifExportProgress) => void,
 ): GifFramePayload[] {
-  const views = getOrderedViews(stereoSplit, settings.swapEyes);
-  const dimensions = getExportDimensions(views[0], exportSize);
+  const sequence = createWiggleFrameSequence();
   const delay = getFrameInterval(settings.speed);
 
-  return views.map((view, index) => {
-    const frameIndex = index as 0 | 1;
-    const imageData = drawExportFrame(
+  onProgress?.({ stage: 'preparing', progress: 0 });
+  return sequence.map((frame, index) => {
+    const imageData = drawFrame(
       stereoSplit,
-      view,
-      frameIndex,
       settings,
-      dimensions.width,
-      dimensions.height,
+      exportSize,
+      frame,
     );
+    onProgress?.({
+      stage: 'preparing',
+      progress: (index + 1) / sequence.length,
+    });
 
     return {
       data: imageData.data,
-      width: dimensions.width,
-      height: dimensions.height,
-      delay,
+      width: imageData.width,
+      height: imageData.height,
+      delay: Math.max(20, Math.round(delay * frame.delayMultiplier)),
     };
   });
 }
 
-export function encodeGifInWorker(frames: GifFramePayload[]): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('../workers/gifWorker.ts', import.meta.url), {
-      type: 'module',
-    });
-    const transferables = frames.map((frame) => frame.data.buffer as ArrayBuffer);
-    const request: GifWorkerRequest = {
-      type: 'encode',
-      frames,
+function encodeGifInWorker(
+  frames: GifFramePayload[],
+  onProgress?: (progress: GifExportProgress) => void,
+): GifExportTask {
+  let worker: Worker | null = new Worker(new URL('../workers/gifWorker.ts', import.meta.url), {
+    type: 'module',
+  });
+  let settled = false;
+
+  const promise = new Promise<Blob>((resolve, reject) => {
+    const activeWorker = worker;
+    if (!activeWorker) {
+      reject(new Error('GIF worker could not be created.'));
+      return;
+    }
+
+    const finish = () => {
+      activeWorker.terminate();
+      worker = null;
+      settled = true;
     };
 
-    worker.onmessage = (event: MessageEvent<GifWorkerResponse>) => {
-      worker.terminate();
+    activeWorker.onmessage = (event: MessageEvent<GifWorkerResponse>) => {
+      if (event.data.type === 'progress') {
+        onProgress?.({
+          stage: 'encoding',
+          progress: event.data.completed / event.data.total,
+        });
+        return;
+      }
+
+      finish();
+
+      if (event.data.type === 'canceled') {
+        reject(new ExportCanceledError());
+        return;
+      }
 
       if (event.data.type === 'failure') {
         reject(new Error(event.data.message));
         return;
       }
 
+      onProgress?.({ stage: 'ready', progress: 1 });
       resolve(new Blob([event.data.buffer], { type: 'image/gif' }));
     };
 
-    worker.onerror = (event) => {
-      worker.terminate();
-      reject(new Error(event.message));
+    activeWorker.onerror = (event) => {
+      finish();
+      reject(new Error(event.message || 'GIF worker failed.'));
     };
 
-    worker.postMessage(request, transferables);
+    const transferables = frames.map((frame) => frame.data.buffer as ArrayBuffer);
+    const request: GifWorkerRequest = { type: 'encode', frames };
+    activeWorker.postMessage(request, transferables);
   });
+
+  return {
+    promise,
+    cancel: () => {
+      if (!settled && worker) {
+        worker.postMessage({ type: 'cancel' } satisfies GifWorkerRequest);
+      }
+    },
+  };
 }
 
-export async function exportGif(
+export function exportGif(
   stereoSplit: StereoSplitResult,
   settings: WiggleSettings,
   exportSize: ExportSize,
-): Promise<Blob> {
-  const frames = createGifFrames(stereoSplit, settings, exportSize);
-  return encodeGifInWorker(frames);
+  onProgress?: (progress: GifExportProgress) => void,
+): GifExportTask {
+  if (isGifMemoryBudgetExceeded(stereoSplit, settings, exportSize)) {
+    return {
+      promise: Promise.reject(new Error('GIF export exceeds the safe memory budget.')),
+      cancel: () => undefined,
+    };
+  }
+
+  try {
+    const frames = createGifFrames(stereoSplit, settings, exportSize, onProgress);
+    return encodeGifInWorker(frames, onProgress);
+  } catch (error) {
+    return {
+      promise: Promise.reject(error),
+      cancel: () => undefined,
+    };
+  }
 }

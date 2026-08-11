@@ -36,6 +36,10 @@ export function isMpoFile(file: File): boolean {
   return getSupportedImageFileType(file) === 'mpo';
 }
 
+export function isMpoFileName(name: string, type = ''): boolean {
+  return type === 'image/mpo' || /\.mpo$/i.test(name);
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;

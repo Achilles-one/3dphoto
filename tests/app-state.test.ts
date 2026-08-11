@@ -77,7 +77,6 @@ test('reset upload clears the selected file, preview, and settings', () => {
   const app = useAppState();
   app.showPreview({} as never, stereoSplit);
   app.setSpeed(90);
-  app.setIntensity(60);
   app.setAlignment(18, -10);
   app.togglePlayback();
 
@@ -91,4 +90,19 @@ test('reset upload clears the selected file, preview, and settings', () => {
   assert.equal(app.state.settings.alignmentX, 0);
   assert.equal(app.state.settings.alignmentY, 0);
   assert.equal(app.state.previewMode, 'split');
+});
+
+test('reset animation settings keeps alignment while restoring animation defaults', () => {
+  const app = useAppState();
+  app.showPreview({} as never, stereoSplit);
+  app.setSpeed(90);
+  app.setAlignment(18, -10);
+  app.togglePlayback();
+
+  app.resetAnimationSettings();
+
+  assert.equal(app.state.settings.speed, 50);
+  assert.equal(app.state.settings.swapEyes, false);
+  assert.equal(app.state.settings.alignmentX, 18);
+  assert.equal(app.state.settings.alignmentY, -10);
 });

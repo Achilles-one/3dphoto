@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import { ref } from 'vue';
+
+import { useDialogFocus } from '@/composables/useDialogFocus';
+
 const emit = defineEmits<{
   closed: [];
 }>();
+
+const dialogElement = ref<HTMLElement | null>(null);
+useDialogFocus(dialogElement, () => emit('closed'));
 </script>
 
 <template>
@@ -9,6 +16,7 @@ const emit = defineEmits<{
     <div class="modal-backdrop" role="presentation" @click.self="emit('closed')">
       <section
         class="guide-modal"
+        ref="dialogElement"
         role="dialog"
         aria-modal="true"
         aria-labelledby="guide-title"
@@ -32,8 +40,15 @@ const emit = defineEmits<{
         <p class="guide-copy">
           For the best wiggle, review the split views first, align the main
           subject until both views overlap cleanly, then create the animation.
-          Alignment stabilizes the subject; Wiggle Amount controls how strongly
-          the final animation moves.
+          Alignment currently handles horizontal and vertical offset only. If
+          the views still do not overlap, the source may also need rotation or
+          scale correction, which this version does not provide.
+        </p>
+
+        <p class="guide-copy">
+          Speed changes playback pace. One blended frame is used between the
+          left and right photos for a smoother loop. MPO files use the first
+          two valid views.
         </p>
 
         <div class="guide-grid">

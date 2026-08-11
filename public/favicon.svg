@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>3D Photo Enhancer</title>
+  <rect width="64" height="64" rx="14" fill="#243f3a"/>
+  <path d="M9 19h18c7.7 0 14 6.3 14 14s-6.3 14-14 14H9V19Z" fill="#e2f2ea"/>
+  <path d="M55 19H37c-7.7 0-14 6.3-14 14s6.3 14 14 14h18V19Z" fill="#9dcfc0" opacity=".95"/>
+  <circle cx="27" cy="33" r="5" fill="#243f3a"/>
+  <circle cx="37" cy="33" r="5" fill="#243f3a"/>
+</svg>

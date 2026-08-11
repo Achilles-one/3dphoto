@@ -4,12 +4,14 @@ import type {
   AppErrorCode,
   AppState,
   ExportSize,
+  InputDetection,
   StereoLayout,
   UploadedFileInfo,
   UserFacingError,
 } from '@/types/app';
 import type { ProcessedImageInfo } from '@/types/image';
 import type { StereoSplitResult } from '@/types/stereo';
+import { getAlignmentLimit } from '../core/alignment.ts';
 
 const defaultSettings = {
   layout: 'auto',
@@ -74,6 +76,11 @@ const errorCopy: Record<AppErrorCode, Omit<UserFacingError, 'code'>> = {
     action: 'Only the first two views are used for the wiggle preview.',
     recoverable: true,
   },
+  'sbs-dimensions-mismatch': {
+    message: 'The two views do not have matching dimensions for SBS export.',
+    action: 'Choose GIF, or use an MPO with two views of the same size.',
+    recoverable: true,
+  },
 };
 
 function createFileInfo(file: File): UploadedFileInfo {
@@ -83,6 +90,12 @@ function createFileInfo(file: File): UploadedFileInfo {
     type: file.type,
     lastModified: file.lastModified,
   };
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 export function createUserFacingError(code: AppErrorCode): UserFacingError {
@@ -99,6 +112,7 @@ export function useAppState() {
     selectedFile: null,
     processedImage: null,
     stereoSplit: null,
+    detection: null,
     error: null,
     settings: { ...defaultSettings },
   });
@@ -109,25 +123,37 @@ export function useAppState() {
     state.selectedFile = createFileInfo(file);
     state.processedImage = null;
     state.stereoSplit = null;
+    state.detection = null;
     state.error = null;
     state.settings.alignmentX = defaultSettings.alignmentX;
     state.settings.alignmentY = defaultSettings.alignmentY;
     state.settings.overlayOpacity = defaultSettings.overlayOpacity;
+    state.settings.speed = defaultSettings.speed;
+    state.settings.intensity = 0;
+    state.settings.swapEyes = defaultSettings.swapEyes;
+    state.settings.exportSize = defaultSettings.exportSize;
+    state.settings.isPlaying = defaultSettings.isPlaying;
   }
 
-  function showPreview(processedImage: ProcessedImageInfo, stereoSplit: StereoSplitResult) {
+  function showPreview(
+    processedImage: ProcessedImageInfo,
+    stereoSplit: StereoSplitResult,
+    detection?: InputDetection,
+  ) {
     state.phase = 'preview';
     state.previewMode = 'split';
     state.processedImage = processedImage;
     state.stereoSplit = stereoSplit;
+    state.detection = detection ?? null;
     state.error = null;
   }
 
-  function showMpoPreview(stereoSplit: StereoSplitResult) {
+  function showMpoPreview(stereoSplit: StereoSplitResult, detection: InputDetection) {
     state.phase = 'preview';
     state.previewMode = 'split';
     state.processedImage = null;
     state.stereoSplit = stereoSplit;
+    state.detection = detection;
     state.error = null;
     state.settings.isPlaying = false;
   }
@@ -177,6 +203,7 @@ export function useAppState() {
     state.selectedFile = null;
     state.processedImage = null;
     state.stereoSplit = null;
+    state.detection = null;
     state.error = null;
     state.settings = { ...defaultSettings };
   }
@@ -195,13 +222,10 @@ export function useAppState() {
     state.settings.speed = speed;
   }
 
-  function setIntensity(intensity: number) {
-    state.settings.intensity = intensity;
-  }
-
   function setAlignment(alignmentX: number, alignmentY: number) {
-    state.settings.alignmentX = alignmentX;
-    state.settings.alignmentY = alignmentY;
+    const limit = state.stereoSplit ? getAlignmentLimit(state.stereoSplit) : 500;
+    state.settings.alignmentX = Math.min(limit, Math.max(-limit, alignmentX));
+    state.settings.alignmentY = Math.min(limit, Math.max(-limit, alignmentY));
   }
 
   function setOverlayOpacity(overlayOpacity: number) {
@@ -218,6 +242,13 @@ export function useAppState() {
     state.settings.exportSize = exportSize;
   }
 
+  function resetAnimationSettings() {
+    state.settings.speed = defaultSettings.speed;
+    state.settings.intensity = 0;
+    state.settings.swapEyes = defaultSettings.swapEyes;
+    state.settings.exportSize = defaultSettings.exportSize;
+  }
+
   function togglePlayback() {
     if (state.phase !== 'preview') {
       return;
@@ -225,7 +256,7 @@ export function useAppState() {
 
     if (state.previewMode !== 'wiggle') {
       state.previewMode = 'wiggle';
-      state.settings.isPlaying = true;
+      state.settings.isPlaying = !prefersReducedMotion();
       return;
     }
 
@@ -252,7 +283,7 @@ export function useAppState() {
     }
 
     state.previewMode = 'wiggle';
-    state.settings.isPlaying = true;
+    state.settings.isPlaying = !prefersReducedMotion();
   }
 
   function toggleSwapEyes() {
@@ -274,11 +305,11 @@ export function useAppState() {
     setLayout,
     setStereoSplit,
     setSpeed,
-    setIntensity,
     setAlignment,
     setOverlayOpacity,
     resetAlignment,
     setExportSize,
+    resetAnimationSettings,
     togglePlayback,
     toggleSwapEyes,
     showSplitPreview,

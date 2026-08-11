@@ -9,10 +9,15 @@ export function downloadBlob(blob: Blob, fileName: string) {
   link.click();
   link.remove();
 
-  URL.revokeObjectURL(objectUrl);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 export function createGifFileName(sourceName: string | undefined): string {
   const baseName = sourceName?.replace(/\.[^.]+$/, '').trim() || '3d-photo';
   return `${baseName}-wiggle.gif`;
+}
+
+export function createSbsFileName(sourceName: string | undefined): string {
+  const baseName = sourceName?.replace(/\.[^.]+$/, '').trim() || '3d-photo';
+  return `${baseName}-sbs.png`;
 }

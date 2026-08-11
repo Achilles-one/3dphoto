@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { StereoLayout, WiggleSettings } from "@/types/app";
-import { ALIGNMENT_LIMIT_PX } from "@/core/alignment";
 
 const props = defineProps<{
   settings: WiggleSettings;
@@ -8,11 +7,11 @@ const props = defineProps<{
   isWiggleMode: boolean;
   isAlignMode: boolean;
   canChangeLayout: boolean;
+  alignmentLimit: number;
 }>();
 
 const emit = defineEmits<{
   speedChanged: [speed: number];
-  intensityChanged: [intensity: number];
   alignmentChanged: [alignmentX: number, alignmentY: number];
   overlayOpacityChanged: [overlayOpacity: number];
   alignmentReset: [];
@@ -21,6 +20,7 @@ const emit = defineEmits<{
   alignPreviewRequested: [];
   splitReviewRequested: [];
   exportDialogRequested: [];
+  animationSettingsReset: [];
   layoutChanged: [layout: StereoLayout];
 }>();
 
@@ -37,10 +37,6 @@ function getSliderValue(event: Event): number {
 
 function emitSpeed(event: Event) {
   emit("speedChanged", getSliderValue(event));
-}
-
-function emitIntensity(event: Event) {
-  emit("intensityChanged", getSliderValue(event));
 }
 
 function emitAlignmentX(event: Event) {
@@ -116,8 +112,8 @@ function emitOverlayOpacity(event: Event) {
           </span>
           <input
             type="range"
-            :min="-ALIGNMENT_LIMIT_PX"
-            :max="ALIGNMENT_LIMIT_PX"
+            :min="-alignmentLimit"
+            :max="alignmentLimit"
             step="1"
             :value="settings.alignmentX"
             :disabled="disabled"
@@ -137,8 +133,8 @@ function emitOverlayOpacity(event: Event) {
           </span>
           <input
             type="range"
-            :min="-ALIGNMENT_LIMIT_PX"
-            :max="ALIGNMENT_LIMIT_PX"
+            :min="-alignmentLimit"
+            :max="alignmentLimit"
             step="1"
             :value="settings.alignmentY"
             :disabled="disabled"
@@ -211,7 +207,14 @@ function emitOverlayOpacity(event: Event) {
           :disabled="disabled"
           @click="emit('exportDialogRequested')"
         >
-          Download GIF
+          Download
+        </button>
+        <button
+          type="button"
+          :disabled="disabled"
+          @click="emit('animationSettingsReset')"
+        >
+          Reset Animation Settings
         </button>
       </div>
 
@@ -237,26 +240,6 @@ function emitOverlayOpacity(event: Event) {
           </span>
         </label>
 
-        <label class="slider-control">
-          <span>
-            Wiggle Amount
-            <strong>{{ settings.intensity }}</strong>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            :value="settings.intensity"
-            :disabled="disabled"
-            aria-label="Wiggle amount"
-            @input="emitIntensity"
-          />
-          <span class="slider-scale">
-            <small>Soft</small>
-            <small>Strong</small>
-          </span>
-        </label>
       </div>
     </div>
   </section>

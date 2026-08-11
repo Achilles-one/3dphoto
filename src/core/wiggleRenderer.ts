@@ -1,40 +1,18 @@
 import type { WiggleSettings } from '@/types/app';
-import type { StereoSplitResult, StereoView } from '@/types/stereo';
+import type { StereoSplitResult } from '@/types/stereo';
 
-import { getScaledAlignmentOffset } from './alignment';
-import { getFrameInterval, getIntensityOffset } from './wiggleParams';
-
-function getOrderedViews(
-  stereoSplit: StereoSplitResult,
-  swapEyes: boolean,
-): [StereoView, StereoView] {
-  return swapEyes
-    ? [stereoSplit.rightView, stereoSplit.leftView]
-    : [stereoSplit.leftView, stereoSplit.rightView];
-}
-
-function getContainRect(
-  sourceWidth: number,
-  sourceHeight: number,
-  targetWidth: number,
-  targetHeight: number,
-) {
-  const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
-  const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
-
-  return {
-    scale,
-    width,
-    height,
-    x: Math.round((targetWidth - width) / 2),
-    y: Math.round((targetHeight - height) / 2),
-  };
-}
+import { createWiggleFrameSequence } from './frameSequence.ts';
+import {
+  drawWiggleFrame,
+  getFrameGeometry,
+  getOrderedViews,
+  MATTE_BACKGROUND,
+} from './renderGeometry.ts';
+import { getFrameInterval } from './wiggleParams.ts';
 
 export class WiggleRenderer {
   private animationFrameId = 0;
-  private frameIndex: 0 | 1 = 0;
+  private frameIndex = 0;
   private lastFrameChange = 0;
   private readonly context: CanvasRenderingContext2D;
   private stereoSplit: StereoSplitResult | null = null;
@@ -63,6 +41,7 @@ export class WiggleRenderer {
   render(stereoSplit: StereoSplitResult, settings: WiggleSettings) {
     this.stereoSplit = stereoSplit;
     this.settings = { ...settings };
+    this.frameIndex %= createWiggleFrameSequence().length;
 
     if (settings.isPlaying) {
       this.start();
@@ -103,8 +82,18 @@ export class WiggleRenderer {
       return;
     }
 
-    if (timestamp - this.lastFrameChange >= getFrameInterval(this.settings.speed)) {
-      this.frameIndex = this.frameIndex === 0 ? 1 : 0;
+    const sequence = createWiggleFrameSequence();
+    const currentFrame = sequence[this.frameIndex % sequence.length] ?? sequence[0];
+
+    if (!currentFrame) {
+      return;
+    }
+
+    if (
+      timestamp - this.lastFrameChange >=
+      getFrameInterval(this.settings.speed) * currentFrame.delayMultiplier
+    ) {
+      this.frameIndex = (this.frameIndex + 1) % sequence.length;
       this.lastFrameChange = timestamp;
     }
 
@@ -118,41 +107,29 @@ export class WiggleRenderer {
       return;
     }
 
-    const views = getOrderedViews(this.stereoSplit, this.settings.swapEyes);
-    const activeView = views[this.frameIndex];
+    const sequence = createWiggleFrameSequence();
+    const frame = sequence[this.frameIndex % sequence.length] ?? sequence[0];
+
+    if (!frame) {
+      return;
+    }
+
+    const targetWidth = this.canvas.clientWidth;
+    const targetHeight = this.canvas.clientHeight;
+    const geometry = getFrameGeometry(
+      this.stereoSplit,
+      this.settings,
+      targetWidth,
+      targetHeight,
+    );
+    const views = getOrderedViews(this.stereoSplit, this.settings);
 
     this.clear();
-
-    const rect = getContainRect(
-      activeView.width,
-      activeView.height,
-      this.canvas.clientWidth,
-      this.canvas.clientHeight,
-    );
-    const offset = getIntensityOffset(this.settings.intensity, rect.width);
-    const frameDirection = this.frameIndex === 0 ? -1 : 1;
-    const overscanWidth = rect.width + offset * 2;
-    const overscanScale = overscanWidth / activeView.width;
-    const overscanHeight = Math.max(
-      rect.height,
-      Math.round((activeView.height / activeView.width) * overscanWidth),
-    );
-    const alignmentOffset = getScaledAlignmentOffset(
-      this.stereoSplit,
-      activeView,
-      this.settings,
-      overscanScale,
-    );
-    const x = Math.round(rect.x + (rect.width - overscanWidth) / 2);
-    const y = Math.round(rect.y + (rect.height - overscanHeight) / 2);
-
-    this.context.drawImage(
-      activeView.canvas,
-      x + offset * frameDirection + alignmentOffset.x,
-      y + alignmentOffset.y,
-      overscanWidth,
-      overscanHeight,
-    );
+    this.context.fillStyle = MATTE_BACKGROUND;
+    this.context.fillRect(0, 0, targetWidth, targetHeight);
+    this.context.imageSmoothingEnabled = true;
+    this.context.imageSmoothingQuality = 'high';
+    drawWiggleFrame(this.context, views, geometry, frame);
   }
 
   private clear() {
