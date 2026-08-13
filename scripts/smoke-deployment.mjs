@@ -42,7 +42,10 @@ function collectStaticAssetUrls(html, pageUrl) {
   const assetPattern = /(?:src|href)=["']([^"']+\.(?:css|js)(?:\?[^"']*)?)["']/gi;
 
   for (const match of html.matchAll(assetPattern)) {
-    urls.add(new URL(match[1], pageUrl).href);
+    const url = new URL(match[1], pageUrl);
+    if (url.pathname.startsWith('/assets/')) {
+      urls.add(url.href);
+    }
   }
 
   return [...urls];
