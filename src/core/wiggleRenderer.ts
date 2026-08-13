@@ -40,8 +40,15 @@ export class WiggleRenderer {
 
   render(stereoSplit: StereoSplitResult, settings: WiggleSettings) {
     this.stereoSplit = stereoSplit;
+    const intermediateFramesChanged = this.settings?.intermediateFrames !== settings.intermediateFrames;
     this.settings = { ...settings };
-    this.frameIndex %= createWiggleFrameSequence().length;
+    const sequence = createWiggleFrameSequence(settings.intermediateFrames !== false);
+    if (intermediateFramesChanged) {
+      this.frameIndex = 0;
+      this.lastFrameChange = performance.now();
+    } else {
+      this.frameIndex %= sequence.length;
+    }
 
     if (settings.isPlaying) {
       this.start();
@@ -82,7 +89,7 @@ export class WiggleRenderer {
       return;
     }
 
-    const sequence = createWiggleFrameSequence();
+    const sequence = createWiggleFrameSequence(this.settings.intermediateFrames !== false);
     const currentFrame = sequence[this.frameIndex % sequence.length] ?? sequence[0];
 
     if (!currentFrame) {
@@ -107,7 +114,7 @@ export class WiggleRenderer {
       return;
     }
 
-    const sequence = createWiggleFrameSequence();
+    const sequence = createWiggleFrameSequence(this.settings.intermediateFrames !== false);
     const frame = sequence[this.frameIndex % sequence.length] ?? sequence[0];
 
     if (!frame) {

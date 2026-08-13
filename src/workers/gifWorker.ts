@@ -1,6 +1,5 @@
-import { GIFEncoder, applyPalette, quantize } from 'gifenc';
-
 import type { GifWorkerRequest, GifWorkerResponse } from '@/types/export';
+import { createSharedGifEncodingSession } from '@/core/gifEncoding';
 
 interface GifWorkerScope {
   onmessage: ((event: MessageEvent<GifWorkerRequest>) => void) | null;
@@ -19,14 +18,10 @@ workerScope.onmessage = (event: MessageEvent<GifWorkerRequest>) => {
   void encode(event.data.frames ?? []);
 };
 
-async function encode(frames: GifWorkerRequest['frames']) {
+async function encode(frames: NonNullable<GifWorkerRequest['frames']>) {
   try {
     cancelRequested = false;
-    if (!frames?.length) {
-      throw new Error('GIF has no frames to encode.');
-    }
-
-    const gif = GIFEncoder();
+    const session = createSharedGifEncodingSession(frames);
 
     for (const [index, frame] of frames.entries()) {
       if (cancelRequested) {
@@ -34,14 +29,7 @@ async function encode(frames: GifWorkerRequest['frames']) {
         return;
       }
 
-      const palette = quantize(frame.data, 256);
-      const indexedFrame = applyPalette(frame.data, palette);
-
-      gif.writeFrame(indexedFrame, frame.width, frame.height, {
-        palette,
-        delay: frame.delay,
-        repeat: index === 0 ? 0 : undefined,
-      });
+      session.writeFrame(frame, index);
 
       workerScope.postMessage({
         type: 'progress',
@@ -57,9 +45,7 @@ async function encode(frames: GifWorkerRequest['frames']) {
       return;
     }
 
-    gif.finish();
-
-    const bytes = gif.bytes();
+    const bytes = session.finish();
     const buffer = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,

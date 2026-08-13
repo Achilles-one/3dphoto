@@ -1,246 +1,62 @@
 <script setup lang="ts">
-import type { StereoLayout, WiggleSettings } from "@/types/app";
+import type { WiggleSettings } from "@/types/app";
+import { getFrameInterval } from "@/core/wiggleParams";
 
 const props = defineProps<{
   settings: WiggleSettings;
   disabled: boolean;
   isWiggleMode: boolean;
-  isAlignMode: boolean;
-  canChangeLayout: boolean;
   alignmentLimit: number;
+  locale: 'zh-CN' | 'en';
 }>();
 
 const emit = defineEmits<{
-  speedChanged: [speed: number];
   alignmentChanged: [alignmentX: number, alignmentY: number];
   overlayOpacityChanged: [overlayOpacity: number];
   alignmentReset: [];
+  createWiggleRequested: [];
   playbackToggled: [];
+  speedChanged: [speed: number];
   swapEyesToggled: [];
   alignPreviewRequested: [];
-  splitReviewRequested: [];
   exportDialogRequested: [];
-  animationSettingsReset: [];
-  layoutChanged: [layout: StereoLayout];
+  intermediateFrameToggled: [];
 }>();
 
-const layouts: Array<{ label: string; value: StereoLayout }> = [
-  { label: "Auto", value: "auto" },
-  { label: "Side-by-side", value: "side-by-side" },
-  { label: "Top-bottom", value: "top-bottom" },
-];
-
-function getSliderValue(event: Event): number {
-  const input = event.target as HTMLInputElement;
-  return Number(input.value);
+function sliderValue(event: Event): number {
+  return Number((event.target as HTMLInputElement).value);
 }
 
 function emitSpeed(event: Event) {
-  emit("speedChanged", getSliderValue(event));
-}
-
-function emitAlignmentX(event: Event) {
-  emit("alignmentChanged", getSliderValue(event), props.settings.alignmentY);
-}
-
-function emitAlignmentY(event: Event) {
-  emit("alignmentChanged", props.settings.alignmentX, getSliderValue(event));
-}
-
-function emitOverlayOpacity(event: Event) {
-  emit("overlayOpacityChanged", getSliderValue(event) / 100);
+  const input = event.target as HTMLInputElement;
+  const speed = getFrameInterval(input.valueAsNumber);
+  input.value = String(speed);
+  emit("speedChanged", speed);
 }
 </script>
 
 <template>
-  <section class="controls-panel" aria-label="Preview controls">
-    <div
-      v-if="!isWiggleMode && !isAlignMode"
-      class="split-control-grid"
-      :class="{ 'without-layout': !canChangeLayout }"
-    >
-      <fieldset
-        v-if="canChangeLayout"
-        class="segmented-control layout-control"
-        :disabled="disabled"
-      >
-        <button
-          v-for="layout in layouts"
-          :key="layout.value"
-          type="button"
-          :class="{ active: settings.layout === layout.value }"
-          @click="emit('layoutChanged', layout.value)"
-        >
-          {{ layout.label }}
-        </button>
-      </fieldset>
-
-      <div class="control-row split-play-row">
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('alignPreviewRequested')"
-        >
-          Align Views
-        </button>
+  <section class="controls-panel" :aria-label="props.locale === 'en' ? 'Preview controls' : '预览控制'">
+    <template v-if="!isWiggleMode">
+      <div class="align-control-stack">
+        <div class="slider-grid align-slider-grid">
+          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Horizontal' : '水平偏移' }} <strong>{{ settings.alignmentX }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentX" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Horizontal alignment' : '水平偏移'" @input="emit('alignmentChanged', sliderValue($event), settings.alignmentY)" /></label>
+          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Vertical' : '垂直偏移' }} <strong>{{ settings.alignmentY }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentY" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Vertical alignment' : '垂直偏移'" @input="emit('alignmentChanged', settings.alignmentX, sliderValue($event))" /></label>
+          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Overlay' : '叠加强度' }} <strong>{{ Math.round(settings.overlayOpacity * 100) }}%</strong></span><input type="range" min="10" max="90" :value="Math.round(settings.overlayOpacity * 100)" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Overlay opacity' : '叠加强度'" @input="emit('overlayOpacityChanged', sliderValue($event) / 100)" /></label>
+          <button class="secondary-action reset-action" type="button" :disabled="disabled" @click="emit('alignmentReset')">{{ props.locale === 'en' ? 'Reset alignment' : '重置对齐' }}</button>
+        </div>
+        <button class="primary-action workspace-action" type="button" :disabled="disabled" @click="emit('createWiggleRequested')">{{ props.locale === 'en' ? 'Create Wiggle' : '创建 Wiggle' }}</button>
       </div>
-    </div>
-
-    <div v-else-if="isAlignMode" class="align-control-stack">
-      <div class="control-row">
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('alignmentReset')"
-        >
-          Reset Align
-        </button>
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('playbackToggled')"
-        >
-          Create Wiggle
-        </button>
+    </template>
+    <template v-else>
+      <div class="wiggle-control-grid">
+        <label class="speed-control">{{ props.locale === 'en' ? 'Speed' : '速度' }} <span><input type="number" min="100" max="2000" step="1" :value="settings.speed" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Frame interval, 100 to 2000 milliseconds' : '每帧间隔，100 到 2000 毫秒'" @change="emitSpeed" /> ms</span></label>
+        <button type="button" :disabled="disabled" @click="emit('playbackToggled')">{{ settings.isPlaying ? (props.locale === 'en' ? 'Pause' : '暂停') : (props.locale === 'en' ? 'Play' : '播放') }}</button>
+        <button type="button" :disabled="disabled" @click="emit('swapEyesToggled')">{{ props.locale === 'en' ? 'Swap eyes' : '交换左右眼' }}</button>
+        <button type="button" :disabled="disabled" :aria-pressed="settings.intermediateFrames !== false" @click="emit('intermediateFrameToggled')">{{ props.locale === 'en' ? `Intermediate: ${settings.intermediateFrames !== false ? 'On' : 'Off'}` : `中间帧：${settings.intermediateFrames !== false ? '开启' : '关闭'}` }}</button>
+        <button type="button" :disabled="disabled" @click="emit('alignPreviewRequested')">{{ props.locale === 'en' ? 'Adjust alignment' : '调整对齐' }}</button>
       </div>
-
-      <div class="slider-grid align-slider-grid">
-        <label class="slider-control">
-          <span>
-            Horizontal Align
-            <strong>{{ settings.alignmentX }}px</strong>
-          </span>
-          <input
-            type="range"
-            :min="-alignmentLimit"
-            :max="alignmentLimit"
-            step="1"
-            :value="settings.alignmentX"
-            :disabled="disabled"
-            aria-label="Horizontal alignment"
-            @input="emitAlignmentX"
-          />
-          <span class="slider-scale">
-            <small>Left</small>
-            <small>Right</small>
-          </span>
-        </label>
-
-        <label class="slider-control">
-          <span>
-            Vertical Align
-            <strong>{{ settings.alignmentY }}px</strong>
-          </span>
-          <input
-            type="range"
-            :min="-alignmentLimit"
-            :max="alignmentLimit"
-            step="1"
-            :value="settings.alignmentY"
-            :disabled="disabled"
-            aria-label="Vertical alignment"
-            @input="emitAlignmentY"
-          />
-          <span class="slider-scale">
-            <small>Up</small>
-            <small>Down</small>
-          </span>
-        </label>
-
-        <label class="slider-control">
-          <span>
-            Overlay
-            <strong>{{ Math.round(settings.overlayOpacity * 100) }}%</strong>
-          </span>
-          <input
-            type="range"
-            min="10"
-            max="90"
-            step="1"
-            :value="Math.round(settings.overlayOpacity * 100)"
-            :disabled="disabled"
-            aria-label="Overlay opacity"
-            @input="emitOverlayOpacity"
-          />
-          <span class="slider-scale">
-            <small>Light</small>
-            <small>Strong</small>
-          </span>
-        </label>
-      </div>
-    </div>
-
-    <div v-else class="wiggle-control-stack">
-      <div class="control-row">
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('playbackToggled')"
-        >
-          {{ settings.isPlaying ? "Pause" : "Play" }}
-        </button>
-
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('swapEyesToggled')"
-        >
-          Swap eyes
-        </button>
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('splitReviewRequested')"
-        >
-          Review Split
-        </button>
-
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('alignPreviewRequested')"
-        >
-          Adjust Align
-        </button>
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('exportDialogRequested')"
-        >
-          Download
-        </button>
-        <button
-          type="button"
-          :disabled="disabled"
-          @click="emit('animationSettingsReset')"
-        >
-          Reset Animation Settings
-        </button>
-      </div>
-
-      <div class="slider-grid">
-        <label class="slider-control">
-          <span>
-            Speed
-            <strong>{{ settings.speed }}</strong>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            :value="settings.speed"
-            :disabled="disabled"
-            aria-label="Wiggle speed"
-            @input="emitSpeed"
-          />
-          <span class="slider-scale">
-            <small>Slow</small>
-            <small>Fast</small>
-          </span>
-        </label>
-
-      </div>
-    </div>
+      <button class="primary-action workspace-action" type="button" :disabled="disabled" @click="emit('exportDialogRequested')">{{ props.locale === 'en' ? 'Download' : '下载' }}</button>
+    </template>
   </section>
 </template>

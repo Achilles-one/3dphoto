@@ -7,36 +7,23 @@ export interface WiggleFrame {
   delayMultiplier: number;
 }
 
-/** A single blended frame is used to keep the transition smooth and predictable. */
-export function createWiggleFrameSequence(): WiggleFrame[] {
-  return [
-    {
-      sourceView: 'first',
-      crossfadeAmount: 0,
-      isTransition: false,
-      delayMultiplier: 1,
-    },
-    {
-      sourceView: 'crossfade',
-      crossfadeAmount: 0.5,
-      isTransition: true,
-      delayMultiplier: 1,
-    },
-    {
-      sourceView: 'second',
-      crossfadeAmount: 1,
-      isTransition: false,
-      delayMultiplier: 1,
-    },
-    {
-      sourceView: 'crossfade',
-      crossfadeAmount: 0.5,
-      isTransition: true,
-      delayMultiplier: 1,
-    },
-  ];
+const firstFrame: WiggleFrame = {
+  sourceView: 'first', crossfadeAmount: 0, isTransition: false, delayMultiplier: 1,
+};
+const secondFrame: WiggleFrame = {
+  sourceView: 'second', crossfadeAmount: 1, isTransition: false, delayMultiplier: 1,
+};
+const intermediateFrame: WiggleFrame = {
+  sourceView: 'crossfade', crossfadeAmount: 0.5, isTransition: true, delayMultiplier: 1,
+};
+
+/** Returns A → M → B → M, or A → B when intermediate frames are disabled. */
+export function createWiggleFrameSequence(includeIntermediateFrames = true): WiggleFrame[] {
+  return includeIntermediateFrames
+    ? [firstFrame, intermediateFrame, secondFrame, intermediateFrame]
+    : [firstFrame, secondFrame];
 }
 
-export function getWiggleFrameCount(): number {
-  return createWiggleFrameSequence().length;
+export function getWiggleFrameCount(includeIntermediateFrames = true): number {
+  return createWiggleFrameSequence(includeIntermediateFrames).length;
 }

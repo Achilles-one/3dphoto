@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
 import ControlPanel from "@/components/ControlPanel.vue";
 import AlignmentPreviewPanel from "@/components/AlignmentPreviewPanel.vue";
-import ErrorMessage from "@/components/ErrorMessage.vue";
 import GifExportDialog from "@/components/GifExportDialog.vue";
-import InputDetectionPanel from "@/components/InputDetectionPanel.vue";
+import GuideModal from "@/components/GuideModal.vue";
+import PrivacyModal from "@/components/PrivacyModal.vue";
 import PreviewCanvas from "@/components/PreviewCanvas.vue";
-import SplitPreviewPanel from "@/components/SplitPreviewPanel.vue";
 import UploadPanel from "@/components/UploadPanel.vue";
+import MessageCenter from "@/components/MessageCenter.vue";
 import {
   closeDecodedImage,
   createProcessedImageInfo,
@@ -20,24 +20,61 @@ import {
   exportGif,
   type GifExportProgress,
 } from "@/core/exportEngine";
+import {
+  createFramedGifExportSource,
+  getExportSettings,
+  getStereoViewDimensions,
+} from "@/core/exportSource";
+import {
+  createFramedGifSource,
+  getFramedGifOutputDimensions,
+} from "@/core/exportFraming";
 import { SbsDimensionsMismatchError, exportSbs } from "@/core/sbsExport";
 import { getAlignmentLimit } from "@/core/alignment";
-import { isTooSmallForStereo, isTooSmallForStereoView } from "@/core/sizePolicy";
+import {
+  isTooSmallForStereo,
+  isTooSmallForStereoView,
+} from "@/core/sizePolicy";
 import { splitStereoImage } from "@/core/stereoSplitter";
 import { MpoParseError } from "@/core/mpoParser";
-import { releaseProcessedImage, releaseStereoSplit } from "@/core/resourceCleanup";
+import {
+  releaseProcessedImage,
+  releaseStereoSplit,
+} from "@/core/resourceCleanup";
+import {
+  createFileReadMemoryPlan,
+  createGifExportMemoryPlans,
+  createMpoDecodeMemoryPlan,
+  createRasterDecodeMemoryPlan,
+  createSbsExportMemoryPlan,
+  getRuntimeMemoryBudget,
+  MemoryBudgetExceededError,
+} from "@/core/memoryBudget";
+import { createFeedbackUrl, getBrowserLabel } from "@/core/feedback";
+import { storeExportPreference } from "@/core/preferences";
 import type {
   AppErrorCode,
   ExportFormat,
+  ExportFraming,
   ExportSize,
   InputDetection,
-  StereoLayout,
+  InputFormat,
 } from "@/types/app";
-import { createGifFileName, createSbsFileName, downloadBlob } from "@/utils/download";
-import { getSupportedImageFileType, isMpoFile, isMpoFileName } from "@/utils/file";
+import type { StereoSplitResult } from "@/types/stereo";
+import {
+  createGifFileName,
+  createSbsFileName,
+  downloadBlob,
+} from "@/utils/download";
+import {
+  getSupportedImageFileType,
+  isMpoFile,
+  isMpoFileName,
+} from "@/utils/file";
 import { trackEvent } from "@/utils/analytics";
 
 import { useAppState } from "./appState";
+import { useMessageCenter } from "@/composables/useMessageCenter";
 
 const {
   state,
@@ -48,28 +85,50 @@ const {
   setRecoverableError,
   setUploadRejectedError,
   clearError,
+  toggleLocale,
   startExporting,
   finishExporting,
+  startCreatingWiggle,
+  finishCreatingWiggle,
   setLayout,
-  setStereoSplit,
   setSpeed,
+  toggleIntermediateFrames,
   setAlignment,
   setOverlayOpacity,
   resetAlignment,
   togglePlayback,
   toggleSwapEyes,
-  resetUpload,
-  showSplitPreview,
   showAlignPreview,
   showWigglePreview,
-  resetAnimationSettings,
 } = useAppState();
+const { messages, dismiss: dismissMessage, showMessage } = useMessageCenter();
 
 const isExportDialogOpen = ref(false);
-const exportProgress = ref<GifExportProgress>({ stage: "preparing", progress: 0 });
-let cancelActiveExport: (() => void) | null = null;
-let exportCancelRequested = false;
+const isGuideOpen = ref(false);
+const isPrivacyOpen = ref(false);
+const exportProgress = ref<GifExportProgress>({
+  stage: "preparing",
+  progress: 0,
+});
+const lastDiagnosticCode = ref("none");
 let uploadStartedAt = 0;
+let currentSourceFile: File | null = null;
+let uploadGeneration = 0;
+let wiggleCreationGeneration = 0;
+let layoutChangeGeneration = 0;
+const isLayoutChanging = ref(false);
+const memoryBudget = getRuntimeMemoryBudget();
+const appVersion = __APP_VERSION__;
+const buildId = __BUILD_ID__;
+
+interface ExportSession {
+  id: number;
+  canceled: boolean;
+  cancelTask: (() => void) | null;
+}
+
+let nextExportSessionId = 0;
+let activeExportSession: ExportSession | null = null;
 
 const alignmentLimit = computed(() =>
   state.stereoSplit ? getAlignmentLimit(state.stereoSplit) : 500,
@@ -77,10 +136,186 @@ const alignmentLimit = computed(() =>
 const isMpoInput = computed(() =>
   isMpoFileName(state.selectedFile?.name ?? "", state.selectedFile?.type ?? ""),
 );
+const isEnglish = computed(() => state.locale === "en");
+const nextLayout = computed(() =>
+  state.settings.layout === "top-bottom" ? "side-by-side" : "top-bottom",
+);
+const layoutToggleLabel = computed(() =>
+  isEnglish.value
+    ? `Switch to ${nextLayout.value === "top-bottom" ? "Top-Bottom" : "SBS"} layout`
+    : `切换为${nextLayout.value === "top-bottom" ? "上下拼接" : "左右拼接"}布局`,
+);
+const feedbackInputFormat = computed<InputFormat | "not-loaded" | "unknown">(
+  () => {
+    if (state.detection) {
+      return state.detection.format;
+    }
+
+    if (!state.selectedFile) {
+      return "not-loaded";
+    }
+
+    if (isMpoInput.value) {
+      return "mpo";
+    }
+
+    if (state.selectedFile.type === "image/png") {
+      return "png";
+    }
+
+    if (
+      state.selectedFile.type === "image/jpeg" ||
+      state.selectedFile.type === "image/jpg"
+    ) {
+      return "jpeg";
+    }
+
+    return "unknown";
+  },
+);
+const lastExportAttempt = ref<{
+  format: ExportFormat;
+  size: ExportSize;
+  framing: ExportFraming | "not-applicable";
+} | null>(null);
+const feedbackHref = computed(() =>
+  createFeedbackUrl({
+    version: appVersion,
+    buildId,
+    locale: state.locale,
+    browser: getBrowserLabel(navigator.userAgent),
+    inputFormat: feedbackInputFormat.value,
+    exportFormat: lastExportAttempt.value?.format ?? "not-applicable",
+    exportSize: lastExportAttempt.value?.size ?? "not-applicable",
+    exportFraming: lastExportAttempt.value?.framing ?? "not-applicable",
+    errorCode: lastDiagnosticCode.value,
+  }),
+);
+const gifSourceDimensions = computed(() => {
+  if (!state.stereoSplit) {
+    return null;
+  }
+
+  if (state.processedImage) {
+    return getStereoViewDimensions(
+      state.processedImage.originalWidth,
+      state.processedImage.originalHeight,
+      state.stereoSplit.layout,
+    );
+  }
+
+  return {
+    width: state.stereoSplit.leftView.width,
+    height: state.stereoSplit.leftView.height,
+  };
+});
+const gifFramingSource = computed(() => {
+  if (!state.stereoSplit || !gifSourceDimensions.value) {
+    return null;
+  }
+
+  if (!state.processedImage) {
+    return { stereoSplit: state.stereoSplit, settings: state.settings };
+  }
+
+  const rawStereoSplit = {
+    layout: state.stereoSplit.layout,
+    leftView: {
+      width: gifSourceDimensions.value.width,
+      height: gifSourceDimensions.value.height,
+      dataUrl: "",
+      canvas: null,
+    },
+    rightView: {
+      width: gifSourceDimensions.value.width,
+      height: gifSourceDimensions.value.height,
+      dataUrl: "",
+      canvas: null,
+    },
+  } as unknown as StereoSplitResult;
+
+  return {
+    stereoSplit: rawStereoSplit,
+    settings: getExportSettings(
+      state.stereoSplit,
+      rawStereoSplit,
+      state.settings,
+    ),
+  };
+});
+function getGifMemoryPlans(framing: ExportFraming) {
+  if (
+    !state.stereoSplit ||
+    !gifSourceDimensions.value ||
+    !gifFramingSource.value
+  ) {
+    return null;
+  }
+
+  const splitPixels =
+    state.stereoSplit.leftView.width * state.stereoSplit.leftView.height +
+    state.stereoSplit.rightView.width * state.stereoSplit.rightView.height;
+  const previewPixels = state.processedImage
+    ? state.processedImage.previewCanvas.width *
+      state.processedImage.previewCanvas.height
+    : 0;
+  const decodePixels = state.processedImage
+    ? state.processedImage.originalWidth * state.processedImage.originalHeight
+    : 0;
+
+  return createGifExportMemoryPlans(
+    {
+      viewWidth: gifSourceDimensions.value.width,
+      viewHeight: gifSourceDimensions.value.height,
+      residentPixels: splitPixels + previewPixels,
+      decodePixels,
+    },
+    memoryBudget,
+    {
+      small: getFramedGifOutputDimensions(
+        gifFramingSource.value.stereoSplit,
+        gifFramingSource.value.settings,
+        "small",
+        framing,
+      ),
+      medium: getFramedGifOutputDimensions(
+        gifFramingSource.value.stereoSplit,
+        gifFramingSource.value.settings,
+        "medium",
+        framing,
+      ),
+      large: getFramedGifOutputDimensions(
+        gifFramingSource.value.stereoSplit,
+        gifFramingSource.value.settings,
+        "large",
+        framing,
+      ),
+    },
+  );
+}
+const cropOverlapGifMemoryPlans = computed(() =>
+  getGifMemoryPlans("crop-overlap"),
+);
+const fullFrameGifMemoryPlans = computed(() => getGifMemoryPlans("full-frame"));
+const sbsMemoryPlan = computed(() =>
+  state.stereoSplit
+    ? createSbsExportMemoryPlan(state.stereoSplit, memoryBudget)
+    : null,
+);
 
 function releaseCurrentResources() {
   releaseProcessedImage(state.processedImage);
   releaseStereoSplit(state.stereoSplit);
+}
+
+function invalidateActiveExportSession() {
+  const session = activeExportSession;
+  if (!session) {
+    return;
+  }
+
+  session.canceled = true;
+  session.cancelTask?.();
 }
 
 function createInputDetection(
@@ -99,14 +334,99 @@ function createInputDetection(
   };
 }
 
-function splitCurrentImage(layout: StereoLayout) {
-  if (!state.processedImage) {
+async function toggleLayout() {
+  const sourceFile = currentSourceFile;
+  const previousProcessedImage = state.processedImage;
+  const previousStereoSplit = state.stereoSplit;
+  if (
+    !sourceFile ||
+    !previousProcessedImage ||
+    !previousStereoSplit ||
+    isLayoutChanging.value
+  ) {
     return;
   }
 
-  setLayout(layout);
-  setStereoSplit(splitStereoImage(state.processedImage.previewCanvas, layout));
+  const generation = ++layoutChangeGeneration;
+  const layout = nextLayout.value;
+  isLayoutChanging.value = true;
+  let processedImage: ReturnType<typeof createProcessedImageInfo> | null = null;
+  let stereoSplit: StereoSplitResult | null = null;
+
+  try {
+    const decodedImage = await decodeImageFile(sourceFile);
+    try {
+      if (generation !== layoutChangeGeneration) {
+        return;
+      }
+
+      processedImage = createProcessedImageInfo(decodedImage);
+      stereoSplit = splitStereoImage(processedImage.previewCanvas, layout);
+      setLayout(layout);
+      showPreview(
+        processedImage,
+        stereoSplit,
+        state.detection ??
+          createInputDetection(
+            getSupportedImageFileType(sourceFile) ?? "jpeg",
+            stereoSplit,
+          ),
+      );
+      releaseProcessedImage(previousProcessedImage);
+      releaseStereoSplit(previousStereoSplit);
+      processedImage = null;
+      stereoSplit = null;
+    } finally {
+      closeDecodedImage(decodedImage);
+    }
+  } catch {
+    if (generation === layoutChangeGeneration) {
+      setRecoverableError("file-read-failed");
+    }
+  } finally {
+    releaseProcessedImage(processedImage);
+    releaseStereoSplit(stereoSplit);
+    if (generation === layoutChangeGeneration) {
+      isLayoutChanging.value = false;
+    }
+  }
 }
+
+async function handleCreateWiggle() {
+  if (!startCreatingWiggle()) {
+    return;
+  }
+
+  const generation = ++wiggleCreationGeneration;
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  if (generation === wiggleCreationGeneration) {
+    finishCreatingWiggle();
+  }
+}
+
+function showErrorMessage(code: AppErrorCode) {
+  const error = state.error;
+  if (!error) {
+    return;
+  }
+
+  lastDiagnosticCode.value = `${error.diagnosticCode} (${error.code})`;
+  showMessage(
+    code === "mpo-extra-images" ? "warning" : "error",
+    `${error.message} ${error.action} [${error.diagnosticCode}]`,
+  );
+  clearError();
+}
+
+watch(
+  () => state.error?.code,
+  (code) => {
+    if (code) {
+      showErrorMessage(code);
+    }
+  },
+);
 
 function getMpoErrorCode(error: unknown): AppErrorCode {
   if (error instanceof MpoParseError) {
@@ -123,34 +443,106 @@ function getMpoErrorCode(error: unknown): AppErrorCode {
 }
 
 async function handleFileAccepted(file: File) {
+  if (activeExportSession) {
+    return;
+  }
+
+  lastDiagnosticCode.value = "none";
+
+  const fileMemoryPlan = createFileReadMemoryPlan(
+    file.size,
+    memoryBudget,
+    isMpoFile(file) ? "mpo" : "raster",
+  );
+  if (!fileMemoryPlan.allowed) {
+    trackEvent("upload_failure", {
+      format: getSupportedImageFileType(file) ?? "unknown",
+      reason: "file_too_large",
+      fileBytes: file.size,
+      memoryProfile: memoryBudget.kind,
+    });
+    if (state.stereoSplit) {
+      setRecoverableError("file-too-large");
+    } else {
+      setUploadedFile(file);
+      setError("file-too-large");
+    }
+    return;
+  }
+
+  invalidateActiveExportSession();
+  const generation = ++uploadGeneration;
+  wiggleCreationGeneration += 1;
+  layoutChangeGeneration += 1;
   uploadStartedAt = performance.now();
   releaseCurrentResources();
+  currentSourceFile = null;
   setUploadedFile(file);
 
   try {
     if (isMpoFile(file)) {
       const mpoPair = await decodeMpoStereoPair(file);
-
-      if (
-        isTooSmallForStereoView(mpoPair.leftView.width, mpoPair.leftView.height) ||
-        isTooSmallForStereoView(mpoPair.rightView.width, mpoPair.rightView.height)
-      ) {
-        trackEvent("upload_failure", { format: "mpo", reason: "too_small" });
-        setError("image-too-small");
-        return;
-      }
-
       const stereoSplit = {
         layout: "side-by-side",
         leftView: mpoPair.leftView,
         rightView: mpoPair.rightView,
       } as const;
+
+      if (generation !== uploadGeneration) {
+        releaseStereoSplit(stereoSplit);
+        return;
+      }
+
+      const decodeMemoryPlan = createMpoDecodeMemoryPlan(
+        file.size,
+        mpoPair.leftView.width,
+        mpoPair.leftView.height,
+        mpoPair.rightView.width,
+        mpoPair.rightView.height,
+        memoryBudget,
+      );
+      if (!decodeMemoryPlan.allowed) {
+        releaseStereoSplit(stereoSplit);
+        trackEvent("upload_failure", {
+          format: "mpo",
+          reason: "decoded_image_too_large",
+          decodedPixels: decodeMemoryPlan.decodedPixels,
+          estimatedPeakBytes: decodeMemoryPlan.estimatedPeakBytes,
+          memoryProfile: memoryBudget.kind,
+        });
+        setError("decoded-image-too-large");
+        return;
+      }
+
+      if (
+        isTooSmallForStereoView(
+          mpoPair.leftView.width,
+          mpoPair.leftView.height,
+        ) ||
+        isTooSmallForStereoView(
+          mpoPair.rightView.width,
+          mpoPair.rightView.height,
+        )
+      ) {
+        releaseStereoSplit(stereoSplit);
+        trackEvent("upload_failure", { format: "mpo", reason: "too_small" });
+        setError("image-too-small");
+        return;
+      }
+
       showMpoPreview(
         stereoSplit,
         createInputDetection("mpo", stereoSplit, {
           totalImageCount: mpoPair.numberOfImages,
           orientations: mpoPair.orientations,
         }),
+      );
+      currentSourceFile = file;
+      showMessage(
+        "success",
+        isEnglish.value
+          ? "Photo parsed. You can start aligning."
+          : "照片已解析，可以开始对齐",
       );
 
       if (mpoPair.ignoredImageCount > 0) {
@@ -170,35 +562,87 @@ async function handleFileAccepted(file: File) {
     }
 
     const decodedImage = await decodeImageFile(file);
+    let processedImage: ReturnType<typeof createProcessedImageInfo> | null =
+      null;
+    let stereoSplit: StereoSplitResult | null = null;
+    let committed = false;
 
-    if (isTooSmallForStereo(decodedImage.width, decodedImage.height)) {
+    try {
+      if (generation !== uploadGeneration) {
+        return;
+      }
+
+      const decodeMemoryPlan = createRasterDecodeMemoryPlan(
+        file.size,
+        decodedImage.width,
+        decodedImage.height,
+        memoryBudget,
+      );
+      if (!decodeMemoryPlan.allowed) {
+        trackEvent("upload_failure", {
+          format: getSupportedImageFileType(file) ?? "unknown",
+          reason: "decoded_image_too_large",
+          decodedPixels: decodeMemoryPlan.decodedPixels,
+          estimatedPeakBytes: decodeMemoryPlan.estimatedPeakBytes,
+          memoryProfile: memoryBudget.kind,
+        });
+        setError("decoded-image-too-large");
+        return;
+      }
+
+      if (isTooSmallForStereo(decodedImage.width, decodedImage.height)) {
+        trackEvent("upload_failure", {
+          format: getSupportedImageFileType(file) ?? "unknown",
+          reason: "too_small",
+        });
+        setError("image-too-small");
+        return;
+      }
+
+      processedImage = createProcessedImageInfo(decodedImage);
+      stereoSplit = splitStereoImage(
+        processedImage.previewCanvas,
+        state.settings.layout,
+      );
+      const inputType = getSupportedImageFileType(file);
+      if (!inputType) {
+        setError("unsupported-file");
+        return;
+      }
+
+      showPreview(
+        processedImage,
+        stereoSplit,
+        createInputDetection(inputType, stereoSplit),
+      );
+      currentSourceFile = file;
+      committed = true;
+      showMessage(
+        "success",
+        isEnglish.value
+          ? "Photo parsed. You can start aligning."
+          : "照片已解析，可以开始对齐",
+      );
+      trackEvent("upload_success", {
+        format: inputType,
+        durationMs: Math.round(performance.now() - uploadStartedAt),
+        leftWidth: stereoSplit.leftView.width,
+        leftHeight: stereoSplit.leftView.height,
+        rightWidth: stereoSplit.rightView.width,
+        rightHeight: stereoSplit.rightView.height,
+      });
+    } finally {
       closeDecodedImage(decodedImage);
-      trackEvent("upload_failure", { format: getSupportedImageFileType(file) ?? "unknown", reason: "too_small" });
-      setError("image-too-small");
+      if (!committed) {
+        releaseProcessedImage(processedImage);
+        releaseStereoSplit(stereoSplit);
+      }
+    }
+  } catch (error) {
+    if (generation !== uploadGeneration) {
       return;
     }
 
-    const processedImage = createProcessedImageInfo(decodedImage);
-    const stereoSplit = splitStereoImage(
-      processedImage.previewCanvas,
-      state.settings.layout
-    );
-    closeDecodedImage(decodedImage);
-    const inputType = getSupportedImageFileType(file);
-    if (!inputType) {
-      setError("unsupported-file");
-      return;
-    }
-    showPreview(processedImage, stereoSplit, createInputDetection(inputType, stereoSplit));
-    trackEvent("upload_success", {
-      format: inputType,
-      durationMs: Math.round(performance.now() - uploadStartedAt),
-      leftWidth: stereoSplit.leftView.width,
-      leftHeight: stereoSplit.leftView.height,
-      rightWidth: stereoSplit.rightView.width,
-      rightHeight: stereoSplit.rightView.height,
-    });
-  } catch (error) {
     if (isMpoFile(file)) {
       const errorCode = getMpoErrorCode(error);
       trackEvent("upload_failure", { format: "mpo", reason: errorCode });
@@ -215,31 +659,135 @@ async function handleFileAccepted(file: File) {
   }
 }
 
-async function handleExportConfirmed(format: ExportFormat, exportSize: ExportSize) {
-  if (!state.stereoSplit) {
+async function handleExportConfirmed(
+  format: ExportFormat,
+  exportSize: ExportSize,
+  framing: ExportFraming,
+) {
+  if (
+    !state.stereoSplit ||
+    activeExportSession ||
+    state.phase === "exporting"
+  ) {
     return;
   }
 
+  if (format === "gif" && !getGifMemoryPlans(framing)?.[exportSize].allowed) {
+    setRecoverableError("image-too-large");
+    isExportDialogOpen.value = false;
+    return;
+  }
+
+  if (format === "sbs" && !sbsMemoryPlan.value?.allowed) {
+    setRecoverableError(
+      sbsMemoryPlan.value?.dimensions === null
+        ? "sbs-dimensions-mismatch"
+        : "image-too-large",
+    );
+    isExportDialogOpen.value = false;
+    return;
+  }
+
+  lastExportAttempt.value = {
+    format,
+    size: exportSize,
+    framing: format === "gif" ? framing : "not-applicable",
+  };
+  const previewSource = state.stereoSplit;
+  storeExportPreference({ format, size: exportSize });
+  const previewSettings = { ...state.settings };
+  const sourceFile = currentSourceFile;
+  const selectedFileName = state.selectedFile?.name;
+  const shouldUseOriginalImage = Boolean(state.processedImage);
+  const session: ExportSession = {
+    id: ++nextExportSessionId,
+    canceled: false,
+    cancelTask: null,
+  };
+  activeExportSession = session;
   startExporting();
   const exportStartedAt = performance.now();
-  exportCancelRequested = false;
   exportProgress.value = { stage: "preparing", progress: 0 };
+  let temporaryExportSource: StereoSplitResult | null = null;
 
   try {
     const onProgress = (progress: GifExportProgress) => {
-      exportProgress.value = progress;
+      if (activeExportSession === session && !session.canceled) {
+        exportProgress.value = progress;
+      }
     };
-    const exportTask = format === "sbs"
-      ? exportSbs(state.stereoSplit, onProgress)
-      : exportGif(state.stereoSplit, state.settings, exportSize, onProgress);
-    cancelActiveExport = exportTask.cancel;
+    let exportSource: StereoSplitResult;
+    const exportSettings = {
+      ...previewSettings,
+      alignmentX: 0,
+      alignmentY: 0,
+    };
+
+    if (format === "gif") {
+      if (shouldUseOriginalImage) {
+        if (!sourceFile) {
+          throw new Error("The original image source is unavailable.");
+        }
+
+        const decodedImage = await decodeImageFile(sourceFile);
+        try {
+          if (session.canceled || activeExportSession !== session) {
+            throw new ExportCanceledError();
+          }
+
+          temporaryExportSource = createFramedGifExportSource(
+            decodedImage,
+            previewSource.layout,
+            previewSource,
+            previewSettings,
+            exportSize,
+            framing,
+          );
+        } finally {
+          closeDecodedImage(decodedImage);
+        }
+      } else {
+        temporaryExportSource = createFramedGifSource(
+          previewSource,
+          previewSettings,
+          exportSize,
+          framing,
+        );
+      }
+
+      exportSource = temporaryExportSource;
+    } else {
+      exportSource = previewSource;
+    }
+
+    const exportTask =
+      format === "sbs"
+        ? exportSbs(
+            exportSource,
+            onProgress,
+            memoryBudget.maxWorkingMemoryBytes,
+          )
+        : exportGif(
+            exportSource,
+            exportSettings,
+            exportSize,
+            onProgress,
+            memoryBudget.maxWorkingMemoryBytes,
+          );
+    session.cancelTask = exportTask.cancel;
     const exportBlob = await exportTask.promise;
+
+    if (session.canceled || activeExportSession !== session) {
+      throw new ExportCanceledError();
+    }
+
     downloadBlob(
       exportBlob,
       format === "sbs"
-        ? createSbsFileName(state.selectedFile?.name)
-        : createGifFileName(state.selectedFile?.name),
+        ? createSbsFileName(selectedFileName)
+        : createGifFileName(selectedFileName),
     );
+    showMessage("success", isEnglish.value ? "Downloaded" : "已下载");
     if (format === "gif") {
       state.settings.exportSize = exportSize;
       trackEvent("gif_export_success", {
@@ -254,8 +802,14 @@ async function handleExportConfirmed(format: ExportFormat, exportSize: ExportSiz
     isExportDialogOpen.value = false;
     finishExporting();
   } catch (error) {
-    if (error instanceof ExportCanceledError || exportCancelRequested) {
-      finishExporting();
+    if (error instanceof ExportCanceledError || session.canceled) {
+      if (activeExportSession === session) {
+        finishExporting();
+      }
+      return;
+    }
+
+    if (activeExportSession !== session) {
       return;
     }
 
@@ -266,74 +820,110 @@ async function handleExportConfirmed(format: ExportFormat, exportSize: ExportSiz
 
     if (error instanceof SbsDimensionsMismatchError) {
       setRecoverableError("sbs-dimensions-mismatch");
-    } else if (error instanceof Error && error.message.includes("safe memory budget")) {
+    } else if (error instanceof MemoryBudgetExceededError) {
       setRecoverableError("image-too-large");
     } else {
       setRecoverableError("export-failed");
     }
     isExportDialogOpen.value = false;
   } finally {
-    cancelActiveExport = null;
-    exportCancelRequested = false;
-    exportProgress.value = { stage: "preparing", progress: 0 };
+    releaseStereoSplit(temporaryExportSource);
+    session.cancelTask = null;
+    if (activeExportSession === session) {
+      activeExportSession = null;
+      exportProgress.value = { stage: "preparing", progress: 0 };
+    }
   }
 }
 
 function handleExportCanceled() {
-  if (state.phase === "exporting") {
-    exportCancelRequested = true;
-    cancelActiveExport?.();
+  const session = activeExportSession;
+  if (session) {
+    invalidateActiveExportSession();
+    activeExportSession = null;
     finishExporting();
+    exportProgress.value = { stage: "preparing", progress: 0 };
+    return;
   }
 
   isExportDialogOpen.value = false;
-}
-
-function handleResetUpload() {
-  releaseCurrentResources();
-  resetUpload();
-}
-
-function handleAnimationSettingsReset() {
-  resetAnimationSettings();
 }
 
 function handlePlaybackToggle() {
   const wasPlaying = state.settings.isPlaying;
   const wasWiggle = state.previewMode === "wiggle";
   togglePlayback();
-  if ((!wasWiggle || !wasPlaying) && state.previewMode === "wiggle" && state.settings.isPlaying) {
+  if (
+    (!wasWiggle || !wasPlaying) &&
+    state.previewMode === "wiggle" &&
+    state.settings.isPlaying
+  ) {
     trackEvent("wiggle_play");
   }
 }
+
+onUnmounted(() => {
+  uploadGeneration += 1;
+  wiggleCreationGeneration += 1;
+  layoutChangeGeneration += 1;
+  invalidateActiveExportSession();
+  releaseCurrentResources();
+  currentSourceFile = null;
+});
 </script>
 
 <template>
   <main class="app-shell">
-    <section class="upload-section" aria-label="Upload">
+    <header class="app-header">
+      <div class="header-actions">
+        <button type="button" class="text-action" @click="isGuideOpen = true">
+          {{ isEnglish ? "Guide" : "使用指南" }}</button
+        ><button type="button" class="text-action" @click="toggleLocale">
+          {{ isEnglish ? "EN / 中文" : "中文 / EN" }}
+        </button>
+      </div>
+      <h1>3D Photo Enhancer</h1>
+      <p class="subtitle">
+        {{
+          isEnglish
+            ? "Turn stereo photos into Wiggle animations"
+            : "将立体照片制作成 Wiggle 动图"
+        }}
+      </p>
+    </header>
+
+    <section class="upload-section">
       <UploadPanel
+        :disabled="state.phase === 'loading' || state.phase === 'exporting'"
+        :is-loading="state.phase === 'loading'"
+        :locale="state.locale"
         @file-accepted="handleFileAccepted"
         @file-rejected="setUploadRejectedError"
       />
     </section>
 
-    <section class="preview-workspace" aria-label="Preview workspace">
+    <section
+      class="preview-workspace"
+      :aria-label="isEnglish ? 'Preview workspace' : '预览工作区'"
+    >
       <header class="section-header">
-        <div>
-          <h2>Review and animate</h2>
-        </div>
+        <h2>
+          {{
+            state.previewMode === "wiggle"
+              ? isEnglish
+                ? "Wiggle Preview"
+                : "Wiggle 预览"
+              : isEnglish
+                ? "Alignment Preview"
+                : "对齐预览"
+          }}
+        </h2>
 
-        <div class="mode-switch" role="tablist" aria-label="Preview mode">
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="state.previewMode === 'split'"
-            :class="{ active: state.previewMode === 'split' }"
-            :disabled="state.phase === 'loading' || state.phase === 'exporting'"
-            @click="showSplitPreview"
-          >
-            Split Preview
-          </button>
+        <div
+          class="mode-switch"
+          role="tablist"
+          :aria-label="isEnglish ? 'Preview mode' : '预览模式'"
+        >
           <button
             type="button"
             role="tab"
@@ -342,7 +932,7 @@ function handlePlaybackToggle() {
             :disabled="state.phase !== 'preview'"
             @click="showAlignPreview"
           >
-            Align Preview
+            {{ isEnglish ? "Alignment Preview" : "对齐预览" }}
           </button>
           <button
             type="button"
@@ -352,7 +942,7 @@ function handlePlaybackToggle() {
             :disabled="state.phase !== 'preview'"
             @click="showWigglePreview"
           >
-            Wiggle Preview
+            {{ isEnglish ? "Wiggle Preview" : "Wiggle 预览" }}
           </button>
         </div>
       </header>
@@ -364,55 +954,85 @@ function handlePlaybackToggle() {
         :processed-image="state.processedImage"
         :stereo-split="state.stereoSplit"
         :settings="state.settings"
+        :locale="state.locale"
       />
 
-      <AlignmentPreviewPanel
-        v-else-if="state.previewMode === 'align'"
-        :phase="state.phase"
-        :stereo-split="state.stereoSplit"
-        :settings="state.settings"
-      />
-
-      <SplitPreviewPanel
-        v-else
-        :phase="state.phase"
-        :stereo-split="state.stereoSplit"
-      />
-
-      <InputDetectionPanel
-        v-if="state.detection"
-        :detection="state.detection"
-      />
+      <div v-else class="alignment-preview-wrap">
+        <AlignmentPreviewPanel
+          :phase="state.phase"
+          :stereo-split="state.stereoSplit"
+          :settings="state.settings"
+          :locale="state.locale"
+        />
+        <button
+          class="layout-toggle"
+          type="button"
+          :disabled="
+            !state.processedImage ||
+            state.phase !== 'preview' ||
+            isLayoutChanging
+          "
+          :title="
+            state.processedImage
+              ? layoutToggleLabel
+              : isEnglish
+                ? 'Only for JPG/PNG combined images'
+                : '仅适用于 JPG/PNG 拼接图'
+          "
+          :aria-label="
+            state.processedImage
+              ? layoutToggleLabel
+              : isEnglish
+                ? 'Image layout is available for JPG/PNG only'
+                : '图片布局仅适用于 JPG/PNG'
+          "
+          @click="toggleLayout"
+        >
+          <svg
+            v-if="nextLayout === 'top-bottom'"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M4 8h16M4 16h16M8 4l-4 4 4 4M16 12l4 4-4 4" />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 4v16M16 4v16M4 8l4-4 4 4M12 16l4 4 4-4" />
+          </svg>
+        </button>
+      </div>
 
       <ControlPanel
         :settings="state.settings"
         :is-wiggle-mode="state.previewMode === 'wiggle'"
-        :is-align-mode="state.previewMode === 'align'"
         :alignment-limit="alignmentLimit"
-        :disabled="
-          state.phase === 'empty' ||
-          state.phase === 'error' ||
-          state.phase === 'exporting'
-        "
-        :can-change-layout="Boolean(state.processedImage)"
-        @speed-changed="setSpeed"
+        :locale="state.locale"
+        :disabled="state.phase !== 'preview'"
         @alignment-changed="setAlignment"
         @overlay-opacity-changed="setOverlayOpacity"
         @alignment-reset="resetAlignment"
+        @create-wiggle-requested="handleCreateWiggle"
         @playback-toggled="handlePlaybackToggle"
         @swap-eyes-toggled="toggleSwapEyes"
+        @speed-changed="setSpeed"
+        @intermediate-frame-toggled="toggleIntermediateFrames"
         @align-preview-requested="showAlignPreview"
-        @split-review-requested="showSplitPreview"
         @export-dialog-requested="isExportDialogOpen = true"
-        @animation-settings-reset="handleAnimationSettingsReset"
-        @layout-changed="splitCurrentImage"
       />
+      <div
+        v-if="state.phase === 'creating'"
+        class="workspace-loading"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="loading-indicator" aria-hidden="true" />
+        {{ isEnglish ? "Creating Wiggle" : "正在创建 Wiggle" }}
+      </div>
     </section>
 
-    <ErrorMessage
-      :error="state.error"
-      @dismissed="clearError"
-      @reset-requested="handleResetUpload"
+    <MessageCenter
+      :messages="messages"
+      :locale="state.locale"
+      @dismissed="dismissMessage"
     />
 
     <GifExportDialog
@@ -420,9 +1040,36 @@ function handlePlaybackToggle() {
       :initial-size="state.settings.exportSize"
       :is-exporting="state.phase === 'exporting'"
       :is-mpo="isMpoInput"
+      :locale="state.locale"
+      :gif-frame-count="state.settings.intermediateFrames !== false ? 4 : 2"
+      :gif-source-dimensions="gifSourceDimensions"
+      :crop-overlap-gif-memory-plans="cropOverlapGifMemoryPlans"
+      :full-frame-gif-memory-plans="fullFrameGifMemoryPlans"
+      :sbs-memory-plan="sbsMemoryPlan"
+      :memory-profile="memoryBudget.kind"
       :progress="exportProgress"
       @canceled="handleExportCanceled"
       @confirmed="handleExportConfirmed"
+    />
+
+    <footer class="app-footer">
+      <span>Beta v{{ appVersion }}</span>
+      <button class="text-action" type="button" @click="isPrivacyOpen = true">
+        {{ isEnglish ? "Privacy" : "隐私政策" }}
+      </button>
+      <a :href="feedbackHref" target="_blank" rel="noopener noreferrer">{{
+        isEnglish ? "Feedback" : "反馈"
+      }}</a>
+    </footer>
+    <GuideModal
+      v-if="isGuideOpen"
+      :locale="state.locale"
+      @closed="isGuideOpen = false"
+    />
+    <PrivacyModal
+      v-if="isPrivacyOpen"
+      :locale="state.locale"
+      @closed="isPrivacyOpen = false"
     />
   </main>
 </template>

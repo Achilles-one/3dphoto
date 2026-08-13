@@ -2,7 +2,7 @@ import type { WiggleSettings } from '@/types/app';
 import type { StereoSplitResult, StereoView } from '@/types/stereo';
 
 export const ALIGNMENT_LIMIT_PX = 500;
-export const ALIGNMENT_LIMIT_RATIO = 0.15;
+export const ALIGNMENT_LIMIT_RATIO = 0.2;
 
 export function getAlignmentLimit(stereoSplit: StereoSplitResult): number {
   const shortestEdge = Math.min(
