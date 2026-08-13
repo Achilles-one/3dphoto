@@ -5,6 +5,7 @@ import { SECURITY_HEADERS } from './security-headers.mjs';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const WORKER_TIMEOUT_MS = 15_000;
+const VERCEL_AUTOMATION_BYPASS_SECRET = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 function fail(message) {
   throw new Error(`[smoke-deployment] ${message}`);
@@ -14,6 +15,9 @@ async function fetchChecked(url, label) {
   const response = await fetch(url, {
     redirect: 'follow',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: VERCEL_AUTOMATION_BYPASS_SECRET
+      ? { 'x-vercel-protection-bypass': VERCEL_AUTOMATION_BYPASS_SECRET }
+      : undefined,
   });
 
   if (!response.ok) {
