@@ -13,7 +13,27 @@ import {
   createWiggleFrameSequence,
   getWiggleFrameCount,
 } from '../src/core/frameSequence.ts';
-import { estimateGifMemoryBytes, isGifMemoryBudgetExceeded } from '../src/core/sizePolicy.ts';
+import {
+  getExportDimensions,
+} from '../src/core/sizePolicy.ts';
+import {
+  CONSERVATIVE_MEMORY_BUDGET,
+  createFileReadMemoryPlan,
+  createGifExportMemoryPlans,
+  createMpoDecodeMemoryPlan,
+  createRasterDecodeMemoryPlan,
+  createSbsExportMemoryPlan,
+  estimateGifEncodingMemoryBytes,
+  getMemoryBudgetProfile,
+  getRecommendedGifSize,
+  STANDARD_MEMORY_BUDGET,
+  type MemoryBudgetProfile,
+} from '../src/core/memoryBudget.ts';
+import {
+  getExportSettings,
+  getStereoViewDimensions,
+} from '../src/core/exportSource.ts';
+import { getGifExportRenderPlan } from '../src/core/exportFraming.ts';
 import { getSbsOutputDimensions } from '../src/core/sbsExport.ts';
 import {
   formatFileSize,
@@ -23,10 +43,11 @@ import {
 } from '../src/utils/file.ts';
 
 test('speed values are clamped to safe output ranges', () => {
-  assert.equal(getFrameInterval(0), 920);
-  assert.equal(getFrameInterval(100), 220);
-  assert.equal(getFrameInterval(-10), 920);
-  assert.equal(getFrameInterval(120), 220);
+  assert.equal(getFrameInterval(100), 100);
+  assert.equal(getFrameInterval(2000), 2000);
+  assert.equal(getFrameInterval(-10), 100);
+  assert.equal(getFrameInterval(2001), 2000);
+  assert.equal(getFrameInterval(500.6), 501);
 
 });
 
@@ -108,6 +129,11 @@ test('wiggle sequence makes a seamless forward and reverse loop', () => {
     ),
   );
   assert.equal(createWiggleFrameSequence().at(-1)?.delayMultiplier, 1);
+  assert.equal(getWiggleFrameCount(false), 2);
+  assert.deepEqual(
+    createWiggleFrameSequence(false).map(({ sourceView }) => sourceView),
+    ['first', 'second'],
+  );
 });
 
 test('crossfade draws an opaque base before the half-opacity overlay', () => {
@@ -140,10 +166,249 @@ test('GIF memory estimates include the fixed crossfade loop frames', () => {
     leftView: { width: 2160, height: 2160 },
     rightView: { width: 2160, height: 2160 },
   } as never;
-  const settings = {} as never;
+  const estimate = estimateGifEncodingMemoryBytes(stereoSplit, 'large');
 
-  assert.ok(estimateGifMemoryBytes(stereoSplit, settings, 'large') > 50 * 1024 * 1024);
-  assert.equal(isGifMemoryBudgetExceeded(stereoSplit, settings, 'large'), false);
+  assert.ok(estimate > 50 * 1024 * 1024);
+  assert.ok(estimate < STANDARD_MEMORY_BUDGET.maxWorkingMemoryBytes);
+});
+
+test('only browsers reporting very low memory use the conservative profile', () => {
+  assert.equal(getMemoryBudgetProfile({ deviceMemoryGb: 2 }).kind, 'conservative');
+  assert.equal(getMemoryBudgetProfile({ deviceMemoryGb: 4 }).kind, 'standard');
+  assert.equal(getMemoryBudgetProfile({ coarsePointer: true }).kind, 'standard');
+  assert.equal(getMemoryBudgetProfile({}).kind, 'standard');
+  assert.equal(getMemoryBudgetProfile({
+    deviceMemoryGb: 8,
+    hardwareConcurrency: 4,
+    coarsePointer: false,
+  }).kind, 'standard');
+});
+
+test('upload preflight uses byte caps before decoding', () => {
+  const fortyMegabytes = 40 * 1024 * 1024;
+
+  assert.equal(
+    createFileReadMemoryPlan(fortyMegabytes, STANDARD_MEMORY_BUDGET).allowed,
+    true,
+  );
+  assert.equal(
+    createFileReadMemoryPlan(fortyMegabytes, CONSERVATIVE_MEMORY_BUDGET).allowed,
+    false,
+  );
+});
+
+test('decoded pixel checks are more conservative on constrained devices', () => {
+  const standardPlan = createRasterDecodeMemoryPlan(
+    8 * 1024 * 1024,
+    5000,
+    4000,
+    STANDARD_MEMORY_BUDGET,
+  );
+  const conservativePlan = createRasterDecodeMemoryPlan(
+    8 * 1024 * 1024,
+    5000,
+    4000,
+    CONSERVATIVE_MEMORY_BUDGET,
+  );
+
+  assert.equal(standardPlan.allowed, true);
+  assert.equal(conservativePlan.allowed, false);
+  assert.equal(conservativePlan.decodedPixels, 20_000_000);
+});
+
+test('Weeview 32.51MP SBS baseline fits the desktop decode budget', () => {
+  const plan = createRasterDecodeMemoryPlan(
+    9 * 1024 * 1024,
+    8064,
+    4032,
+    STANDARD_MEMORY_BUDGET,
+  );
+
+  assert.equal(plan.allowed, true);
+});
+
+test('touch devices without a low-memory signal accept the required source baselines', () => {
+  const profile = getMemoryBudgetProfile({ coarsePointer: true });
+  const sbsPlan = createRasterDecodeMemoryPlan(
+    9 * 1024 * 1024,
+    8064,
+    4032,
+    profile,
+  );
+  const mpoPlan = createMpoDecodeMemoryPlan(
+    7 * 1024 * 1024,
+    3584,
+    2016,
+    3584,
+    2016,
+    profile,
+  );
+
+  assert.equal(profile.kind, 'standard');
+  assert.equal(sbsPlan.allowed, true);
+  assert.equal(mpoPlan.allowed, true);
+});
+
+test('GIF plans recommend the largest executable downgrade', () => {
+  const testProfile: MemoryBudgetProfile = {
+    kind: 'standard',
+    maxWorkingMemoryBytes: 55 * 1024 * 1024,
+    maxFileBytes: 64 * 1024 * 1024,
+    maxDecodedPixels: 32_000_000,
+    maxMpoFileBytes: 32 * 1024 * 1024,
+    maxMpoDecodedPixels: 16_000_000,
+  };
+  const plans = createGifExportMemoryPlans(
+    {
+      viewWidth: 4000,
+      viewHeight: 4000,
+      residentPixels: 2_000_000,
+      decodePixels: 0,
+    },
+    testProfile,
+  );
+
+  assert.equal(plans.large.allowed, false);
+  assert.equal(plans.medium.allowed, true);
+  assert.equal(getRecommendedGifSize(plans, 'large'), 'medium');
+  assert.ok(plans.large.estimatedPeakBytes > plans.medium.estimatedPeakBytes);
+});
+
+test('SBS export has an independent source, output and encoder budget', () => {
+  const stereoSplit = {
+    leftView: { width: 4000, height: 3000 },
+    rightView: { width: 4000, height: 3000 },
+  } as never;
+
+  assert.equal(
+    createSbsExportMemoryPlan(stereoSplit, STANDARD_MEMORY_BUDGET).allowed,
+    false,
+  );
+  assert.deepEqual(
+    createSbsExportMemoryPlan(stereoSplit, STANDARD_MEMORY_BUDGET).dimensions,
+    { width: 8000, height: 3000 },
+  );
+});
+
+test('a standard FUJIFILM MPO can export its original-size SBS PNG', () => {
+  const stereoSplit = {
+    leftView: { width: 3584, height: 2016 },
+    rightView: { width: 3584, height: 2016 },
+  } as never;
+
+  const plan = createSbsExportMemoryPlan(
+    stereoSplit,
+    STANDARD_MEMORY_BUDGET,
+  );
+
+  assert.equal(plan.allowed, true);
+  assert.deepEqual(plan.dimensions, { width: 7168, height: 2016 });
+});
+
+test('GIF presets constrain the longest edge and never upscale the source', () => {
+  assert.deepEqual(getExportDimensions({ width: 3000, height: 1000 }, 'medium'), {
+    width: 720,
+    height: 240,
+  });
+  assert.deepEqual(getExportDimensions({ width: 1000, height: 3000 }, 'medium'), {
+    width: 240,
+    height: 720,
+  });
+  assert.deepEqual(getExportDimensions({ width: 320, height: 200 }, 'large'), {
+    width: 320,
+    height: 200,
+  });
+});
+
+test('full-resolution stereo dimensions are derived before preview downsampling', () => {
+  assert.deepEqual(getStereoViewDimensions(4000, 2000, 'side-by-side'), {
+    width: 2000,
+    height: 2000,
+  });
+  assert.deepEqual(getStereoViewDimensions(2000, 4000, 'top-bottom'), {
+    width: 2000,
+    height: 2000,
+  });
+  assert.deepEqual(getStereoViewDimensions(1601, 800, 'side-by-side'), {
+    width: 800,
+    height: 800,
+  });
+});
+
+test('preview alignment is mapped proportionally onto the export source', () => {
+  const previewSource = {
+    layout: 'side-by-side',
+    leftView: { width: 600, height: 400 },
+    rightView: { width: 600, height: 400 },
+  } as never;
+  const exportSource = {
+    layout: 'side-by-side',
+    leftView: { width: 1024, height: 683 },
+    rightView: { width: 1024, height: 683 },
+  } as never;
+  const settings = {
+    alignmentX: 60,
+    alignmentY: -40,
+    swapEyes: true,
+  } as never;
+
+  const result = getExportSettings(previewSource, exportSource, settings);
+
+  assert.equal(result.alignmentX, 102.4);
+  assert.equal(result.alignmentY, -68.3);
+  assert.equal(result.swapEyes, true);
+});
+
+test('crop-overlap framing crops both alignment axes before GIF sizing', () => {
+  const stereoSplit = {
+    layout: 'side-by-side',
+    leftView: { width: 1000, height: 800 },
+    rightView: { width: 1000, height: 800 },
+  } as never;
+  const settings = {
+    alignmentX: 200,
+    alignmentY: -100,
+    swapEyes: false,
+  } as never;
+
+  const cropPlan = getGifExportRenderPlan(
+    stereoSplit,
+    settings,
+    'medium',
+    'crop-overlap',
+  );
+  const fullPlan = getGifExportRenderPlan(
+    stereoSplit,
+    settings,
+    'medium',
+    'full-frame',
+  );
+
+  assert.deepEqual(cropPlan.dimensions, { width: 720, height: 630 });
+  assert.deepEqual(fullPlan.dimensions, { width: 720, height: 576 });
+  assert.ok(cropPlan.first.x < 0);
+  assert.ok(cropPlan.second.x === 0);
+  assert.ok(cropPlan.first.y === 0);
+  assert.ok(cropPlan.second.y < 0);
+});
+
+test('crop-overlap framing remains valid for swapped and uneven MPO views', () => {
+  const stereoSplit = {
+    layout: 'side-by-side',
+    leftView: { width: 1000, height: 800 },
+    rightView: { width: 800, height: 800 },
+  } as never;
+  const plan = getGifExportRenderPlan(
+    stereoSplit,
+    { alignmentX: 80, alignmentY: 40, swapEyes: true } as never,
+    'medium',
+    'crop-overlap',
+  );
+
+  assert.ok(plan.dimensions.width > 0);
+  assert.ok(plan.dimensions.height > 0);
+  assert.ok(plan.first.width >= plan.dimensions.width);
+  assert.ok(plan.second.width >= plan.dimensions.width);
 });
 
 test('fixed render geometry preserves the full view and exposes matte background on offset', () => {
@@ -158,7 +423,7 @@ test('fixed render geometry preserves the full view and exposes matte background
   } as never;
   const geometry = getFrameGeometry(stereoSplit, settings, 720, 720);
 
-  assert.equal(getAlignmentLimit(stereoSplit), 90);
+  assert.equal(getAlignmentLimit(stereoSplit), 120);
   assert.equal(geometry.first.x, 0);
   assert.equal(geometry.first.y, 0);
   assert.equal(geometry.first.width, 720);

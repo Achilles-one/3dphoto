@@ -21,6 +21,7 @@ const emit = defineEmits<{
     <div>
       <strong>{{ error.message }}</strong>
       <span>{{ error.action }}</span>
+      <small>Diagnostic code: <code>{{ error.diagnosticCode }}</code></small>
     </div>
     <button
       v-if="error.recoverable"

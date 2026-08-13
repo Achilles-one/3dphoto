@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 import { WiggleRenderer } from '@/core/wiggleRenderer';
-import type { AppPhase, UploadedFileInfo, WiggleSettings } from '@/types/app';
+import type { AppPhase, Locale, UploadedFileInfo, WiggleSettings } from '@/types/app';
 import type { ProcessedImageInfo } from '@/types/image';
 import type { StereoSplitResult } from '@/types/stereo';
 
@@ -12,6 +12,7 @@ const props = defineProps<{
   processedImage: ProcessedImageInfo | null;
   stereoSplit: StereoSplitResult | null;
   settings: WiggleSettings;
+  locale: Locale;
 }>();
 
 const canvasElement = ref<HTMLCanvasElement | null>(null);
@@ -21,10 +22,6 @@ const renderer = ref<WiggleRenderer | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 
 const hasPreview = computed(() => Boolean(props.selectedFile && props.stereoSplit));
-const canvasAspectRatio = computed(() => {
-  const leftView = props.stereoSplit?.leftView;
-  return leftView ? `${leftView.width} / ${leftView.height}` : '16 / 9';
-});
 
 function ensureRenderer() {
   if (!canvasElement.value) {
@@ -39,17 +36,15 @@ function resizeCanvas() {
   const activeRenderer = ensureRenderer();
   const shell = canvasShell.value;
   const stage = previewStage.value;
-  const view = props.stereoSplit?.leftView;
 
-  if (!activeRenderer || !shell || !stage || !view) {
+  if (!activeRenderer || !shell || !stage) {
     return;
   }
 
-  const ratio = view.width / view.height;
-  const width = Math.max(1, Math.min(stage.clientWidth, stage.clientHeight * ratio));
-  const height = Math.max(1, Math.round(width / ratio));
-  shell.style.width = `${Math.round(width)}px`;
-  shell.style.height = `${height}px`;
+  const width = Math.max(1, stage.clientWidth);
+  const height = Math.max(1, stage.clientHeight);
+  shell.style.width = "100%";
+  shell.style.height = "100%";
   activeRenderer.setSize(width, height);
 }
 
@@ -71,7 +66,7 @@ async function renderPreview() {
 }
 
 watch(
-  () => [props.stereoSplit, props.settings.swapEyes, props.settings.isPlaying] as const,
+  () => [props.stereoSplit, props.settings.swapEyes, props.settings.isPlaying, props.settings.intermediateFrames] as const,
   () => {
     if (props.stereoSplit) {
       void renderPreview();
@@ -112,13 +107,16 @@ onBeforeUnmount(() => {
   <section class="preview-panel" aria-labelledby="preview-title">
 
 
-    <div ref="previewStage" class="preview-stage">
-      <template v-if="phase === 'loading'">Preparing preview...</template>
+    <div
+      ref="previewStage"
+      class="preview-stage"
+      :class="{ 'has-wiggle-canvas': hasPreview }"
+    >
+      <template v-if="phase === 'loading'">{{ locale === 'en' ? 'Preparing Wiggle preview…' : '正在准备 Wiggle 预览…' }}</template>
       <template v-else-if="selectedFile && stereoSplit">
         <div
           ref="canvasShell"
           class="wiggle-canvas-shell"
-          :style="{ aspectRatio: canvasAspectRatio }"
         >
           <canvas
             v-if="hasPreview"
@@ -130,7 +128,7 @@ onBeforeUnmount(() => {
 
 
       </template>
-      <template v-else>Your wiggle preview will appear here.</template>
+      <template v-else>{{ locale === 'en' ? 'Your preview will appear here after creating a Wiggle.' : '创建 Wiggle 后，预览会显示在这里。' }}</template>
     </div>
   </section>
 </template>

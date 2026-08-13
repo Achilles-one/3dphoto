@@ -3,10 +3,12 @@ import { ref } from 'vue';
 
 import { useDialogFocus } from '@/composables/useDialogFocus';
 import { isAnalyticsEnabled, setAnalyticsEnabled } from '@/utils/analytics';
+import type { Locale } from '@/types/app';
 
 const emit = defineEmits<{
   closed: [];
 }>();
+const props = defineProps<{ locale: Locale }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
 const analyticsEnabled = ref(isAnalyticsEnabled());
@@ -31,22 +33,19 @@ function updateAnalytics(event: Event) {
       >
         <header class="guide-header">
           <div>
-            <p class="panel-kicker">Privacy</p>
-            <h2 id="privacy-title">Your photos stay in this browser</h2>
+            <p class="panel-kicker">{{ props.locale === 'en' ? 'Privacy' : '隐私政策' }}</p>
+            <h2 id="privacy-title">{{ props.locale === 'en' ? 'All data is processed locally and is not sent/saved online' : '所有数据均在本地处理，不会发送或保存到线上' }}</h2>
           </div>
-          <button class="modal-close" type="button" @click="emit('closed')">
-            Close
-          </button>
+          <!-- <button class="modal-close" type="button" @click="emit('closed')">
+            {{ props.locale === 'en' ? 'Close' : '关闭' }}
+          </button> -->
         </header>
 
         <p class="guide-copy">
-          3D Photo Enhancer decodes, previews, animates, and exports your images locally in
-          your browser. The original photo pixels, MPO contents, and generated GIF are not
-          uploaded by this tool.
+          {{ props.locale === 'en' ? '3D Photo Enhancer decodes, previews, animates, and exports images locally in your browser. Original photo pixels, MPO contents, and generated files are not uploaded by this tool.' : '3D Photo Enhancer 会在您的浏览器中本地解码、预览、制作和导出图片。原始像素、MPO 内容与生成文件都不会上传。' }}
         </p>
         <p class="guide-copy">
-          If online sharing is added later, it will require a separate, explicit upload and
-          deletion policy.
+          {{ props.locale === 'en' ? 'Any future online sharing will require a separate, explicit upload and deletion policy.' : '未来如增加在线分享功能，将另行提供明确的上传与删除政策。' }}
         </p>
 
         <label class="privacy-toggle">
@@ -56,13 +55,13 @@ function updateAnalytics(event: Event) {
             @change="updateAnalytics"
           />
           <span>
-            <strong>Allow anonymous product events</strong>
-            <small>No photo pixels, file names, or image contents are included.</small>
+            <strong>{{ props.locale === 'en' ? 'Allow anonymous product events' : '允许匿名产品事件' }}</strong>
+            <small>{{ props.locale === 'en' ? 'No photo pixels, file names, or image contents are included.' : '不包含图片像素、文件名或图片内容。' }}</small>
           </span>
         </label>
 
         <button class="primary-action" type="button" @click="emit('closed')">
-          Got it
+          {{ props.locale === 'en' ? 'Got it' : '我知道了' }}
         </button>
       </section>
     </div>

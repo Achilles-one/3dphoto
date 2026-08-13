@@ -14,9 +14,11 @@ import {
   MATTE_BACKGROUND,
 } from './renderGeometry.ts';
 import {
-  getExportDimensions,
-  isGifMemoryBudgetExceeded,
-} from './sizePolicy.ts';
+  estimateGifEncodingMemoryBytes,
+  MemoryBudgetExceededError,
+  STANDARD_MEMORY_BUDGET,
+} from './memoryBudget.ts';
+import { getExportDimensions } from './sizePolicy.ts';
 import { getFrameInterval } from './wiggleParams.ts';
 
 export interface GifExportProgress {
@@ -78,7 +80,7 @@ export function createGifFrames(
   exportSize: ExportSize,
   onProgress?: (progress: GifExportProgress) => void,
 ): GifFramePayload[] {
-  const sequence = createWiggleFrameSequence();
+  const sequence = createWiggleFrameSequence(settings.intermediateFrames !== false);
   const delay = getFrameInterval(settings.speed);
 
   onProgress?.({ stage: 'preparing', progress: 0 });
@@ -111,8 +113,10 @@ function encodeGifInWorker(
     type: 'module',
   });
   let settled = false;
+  let rejectTask: ((reason?: unknown) => void) | null = null;
 
   const promise = new Promise<Blob>((resolve, reject) => {
+    rejectTask = reject;
     const activeWorker = worker;
     if (!activeWorker) {
       reject(new Error('GIF worker could not be created.'));
@@ -157,14 +161,22 @@ function encodeGifInWorker(
 
     const transferables = frames.map((frame) => frame.data.buffer as ArrayBuffer);
     const request: GifWorkerRequest = { type: 'encode', frames };
-    activeWorker.postMessage(request, transferables);
+    try {
+      activeWorker.postMessage(request, transferables);
+    } catch (error) {
+      finish();
+      reject(error);
+    }
   });
 
   return {
     promise,
     cancel: () => {
       if (!settled && worker) {
-        worker.postMessage({ type: 'cancel' } satisfies GifWorkerRequest);
+        worker.terminate();
+        worker = null;
+        settled = true;
+        rejectTask?.(new ExportCanceledError());
       }
     },
   };
@@ -175,10 +187,11 @@ export function exportGif(
   settings: WiggleSettings,
   exportSize: ExportSize,
   onProgress?: (progress: GifExportProgress) => void,
+  maxMemoryBytes = STANDARD_MEMORY_BUDGET.maxWorkingMemoryBytes,
 ): GifExportTask {
-  if (isGifMemoryBudgetExceeded(stereoSplit, settings, exportSize)) {
+  if (estimateGifEncodingMemoryBytes(stereoSplit, exportSize) > maxMemoryBytes) {
     return {
-      promise: Promise.reject(new Error('GIF export exceeds the safe memory budget.')),
+      promise: Promise.reject(new MemoryBudgetExceededError()),
       cancel: () => undefined,
     };
   }

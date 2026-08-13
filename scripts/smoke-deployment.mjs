@@ -1,0 +1,216 @@
+import { Worker } from 'node:worker_threads';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { SECURITY_HEADERS } from './security-headers.mjs';
+
+const REQUEST_TIMEOUT_MS = 15_000;
+const WORKER_TIMEOUT_MS = 15_000;
+
+function fail(message) {
+  throw new Error(`[smoke-deployment] ${message}`);
+}
+
+async function fetchChecked(url, label) {
+  const response = await fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    fail(`${label} returned HTTP ${response.status}: ${url}`);
+  }
+
+  return response;
+}
+
+function verifySecurityHeaders(response, label) {
+  for (const [name, expectedValue] of Object.entries(SECURITY_HEADERS)) {
+    const actualValue = response.headers.get(name);
+
+    if (actualValue !== expectedValue) {
+      fail(`${label} has an invalid ${name} header.`);
+    }
+  }
+}
+
+function collectStaticAssetUrls(html, pageUrl) {
+  const urls = new Set();
+  const assetPattern = /(?:src|href)=["']([^"']+\.(?:css|js)(?:\?[^"']*)?)["']/gi;
+
+  for (const match of html.matchAll(assetPattern)) {
+    urls.add(new URL(match[1], pageUrl).href);
+  }
+
+  return [...urls];
+}
+
+function findGifWorkerUrl(javascript, scriptUrl) {
+  const match = javascript.match(/(?:\/assets\/|\.\/)?gifWorker-[A-Za-z0-9_-]+\.js/);
+
+  if (!match) {
+    return null;
+  }
+
+  const reference = match[0];
+  return new URL(
+    reference.startsWith('/') || reference.startsWith('./')
+      ? reference
+      : `/assets/${reference}`,
+    scriptUrl,
+  ).href;
+}
+
+function createMinimalFrames() {
+  const colors = [
+    [255, 0, 0, 255],
+    [128, 0, 128, 255],
+    [0, 0, 255, 255],
+    [128, 0, 128, 255],
+  ];
+
+  return colors.map((color) => ({
+    data: new Uint8ClampedArray([...color, ...color, ...color, ...color]),
+    width: 2,
+    height: 2,
+    delay: 40,
+  }));
+}
+
+export async function runMinimalGifExport(workerSource) {
+  const bootstrap = `
+const { parentPort, workerData } = require('node:worker_threads');
+globalThis.self = globalThis;
+globalThis.postMessage = (message, transfer) => parentPort.postMessage(message, transfer);
+parentPort.on('message', (data) => {
+  if (typeof globalThis.onmessage === 'function') {
+    globalThis.onmessage({ data });
+  }
+});
+try {
+  (0, eval)(workerData.source);
+  parentPort.postMessage({ type: '__smoke_ready__' });
+} catch (error) {
+  parentPort.postMessage({
+    type: '__smoke_boot_failure__',
+    message: error instanceof Error ? error.message : String(error),
+  });
+}
+`;
+
+  const worker = new Worker(bootstrap, {
+    eval: true,
+    execArgv: [],
+    workerData: { source: workerSource },
+  });
+
+  try {
+    const bytes = await new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (callback, value) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeout);
+        callback(value);
+      };
+      const timeout = setTimeout(() => {
+        settle(reject, new Error('GIF Worker did not finish within the timeout.'));
+      }, WORKER_TIMEOUT_MS);
+
+      worker.on('error', (error) => settle(reject, error));
+      worker.on('exit', (code) => {
+        settle(reject, new Error(`GIF Worker exited before export completed (code ${code}).`));
+      });
+      worker.on('message', (message) => {
+        if (message.type === '__smoke_ready__') {
+          worker.postMessage({ type: 'encode', frames: createMinimalFrames() });
+          return;
+        }
+
+        if (message.type === '__smoke_boot_failure__' || message.type === 'failure') {
+          settle(reject, new Error(message.message));
+          return;
+        }
+
+        if (message.type === 'success') {
+          settle(resolve, new Uint8Array(message.buffer));
+        }
+      });
+    });
+
+    const signature = Buffer.from(bytes.subarray(0, 6)).toString('ascii');
+    if ((signature !== 'GIF87a' && signature !== 'GIF89a') || bytes.byteLength < 20) {
+      fail('GIF Worker returned an invalid GIF payload.');
+    }
+
+    return bytes.byteLength;
+  } finally {
+    await worker.terminate();
+  }
+}
+
+export async function smokeDeployment(target) {
+  const pageUrl = new URL(target);
+  if (pageUrl.protocol !== 'https:' && pageUrl.protocol !== 'http:') {
+    fail('The deployment URL must use HTTP or HTTPS.');
+  }
+
+  const pageResponse = await fetchChecked(pageUrl, 'Homepage');
+  verifySecurityHeaders(pageResponse, 'Homepage');
+  const html = await pageResponse.text();
+  const assetUrls = collectStaticAssetUrls(html, pageResponse.url);
+
+  if (assetUrls.length === 0) {
+    fail('Homepage does not reference a JavaScript or CSS asset.');
+  }
+
+  let workerUrl = null;
+  for (const assetUrl of assetUrls) {
+    const assetResponse = await fetchChecked(assetUrl, 'Static asset');
+    verifySecurityHeaders(assetResponse, `Static asset ${new URL(assetUrl).pathname}`);
+    const source = await assetResponse.text();
+
+    if (!workerUrl && new URL(assetUrl).pathname.endsWith('.js')) {
+      workerUrl = findGifWorkerUrl(source, assetResponse.url);
+    }
+  }
+
+  if (!workerUrl) {
+    fail('The GIF Worker URL is missing from the deployed JavaScript.');
+  }
+
+  const workerResponse = await fetchChecked(workerUrl, 'GIF Worker');
+  verifySecurityHeaders(workerResponse, 'GIF Worker');
+  const gifBytes = await runMinimalGifExport(await workerResponse.text());
+
+  return {
+    assetCount: assetUrls.length,
+    gifBytes,
+    pageUrl: pageResponse.url,
+    workerUrl,
+  };
+}
+
+const isCommandLine = process.argv[1]
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isCommandLine) {
+  const target = process.argv[2] || process.env.SMOKE_TEST_URL;
+
+  if (!target) {
+    console.error('Usage: npm run smoke:deployment -- https://deployment.example');
+    process.exitCode = 1;
+  } else {
+    try {
+      const result = await smokeDeployment(target);
+      console.log(
+        `[smoke-deployment] OK: homepage, ${result.assetCount} static assets, GIF Worker, and ${result.gifBytes}-byte minimal GIF export.`,
+      );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    }
+  }
+}

@@ -1,43 +1,181 @@
-# Production Deployment
+# Git 与 Vercel 发布流程
 
-## Build locally
+## 1. 当前生产事实
 
-Use Node.js 22.12 or newer.
+- Git 仓库：`https://github.com/Achilles-one/3dphoto.git`。
+- Vercel 已连接该 Git 仓库。
+- 生产域名：`https://www.achillescat.com`。
+- 当前生产分支为 `main`；推送或合并到 Vercel 配置的生产分支会触发 Production Deployment，成功后生产域名立即指向新部署。
+- 本文只描述目标流程；修改 Vercel 或 GitHub 设置需要单独执行和确认。
+
+## 2. 推荐分支模型
+
+当前阶段不建议增加长期 `release` 分支。推荐：
+
+- `main`：唯一生产分支，只接收通过 PR 的变更。
+- `feature/*` 或 `fix/*`：日常开发分支，推送后由 Vercel 自动生成 Preview Deployment。
+- 紧急修复同样走 `fix/* → Preview → PR → main`，不直接推送 `main`。
+
+原因：Vercel 已为非生产分支和 PR 提供独立 Preview URL；再维护长期 `release` 分支会增加分支漂移、回合并和版本判断成本，但不会自动提供更强的质量门禁。
+
+只有出现以下需求时再引入 `release`/`production` 分支或手动 Promote：
+
+- 必须按固定窗口批量发布。
+- `main` 需要长期承载尚未上线的完整功能。
+- 需要独立、长期存在的 staging 域名和环境变量。
+- 需要产品负责人手动批准生产域名切换。
+
+## 3. 必须改进的门禁
+
+已确认：在 GitHub 为 `main` 配置规则：
+
+1. 禁止直接 push 和 force push。
+2. 必须通过 Pull Request 合并。
+3. 必须通过 `CI / release-check`。
+4. 分支落后时要求更新后重跑检查。
+5. 合并前必须打开 Vercel Preview，完成 UI、移动端和真实文件验收。
+6. 统一使用 Squash merge，确保每个 PR 对应一个可定位的生产提交。
+
+若当前为单人维护，可不强制他人审批，但仍保留 PR、CI 和 Preview 验收；不要为了形式要求无法满足的双人审批。
+
+“Vercel Preview 验收”分成两层：
+
+- 自动门禁：Vercel Preview Deployment 必须构建成功，GitHub 中对应的 Vercel deployment/check 必须成功。
+- 人工验收：在 PR 中勾选与本次变更相关的 PC、移动端、Weeview、FUJIFILM MPO 和下载结果。GitHub 仅靠分支规则无法判断人工是否真的打开过 Preview，因此使用轻量 PR 模板保存验收记录；未来有 E2E 后再把关键流程变成 required check。
+
+当前由项目负责人和 Codex 单人协作开发，不设置“至少一名其他成员批准”等无法满足的规则。PR 模板不是审批机制，也不会增加第二位开发者；它只是在新建 PR 时自动填入变更说明、Preview URL、检查结果和验收勾选项，避免直接合并后才发现漏测。模板保持简短，不要求每次勾选与本次变更无关的完整矩阵。
+
+已确认统一使用 Squash merge；关闭普通 Merge commit 和 Rebase merge。每个 PR 在 `main` 中形成一个可定位、可回滚的提交，并与一次 Vercel Production Deployment 对应。
+
+已确认允许仓库管理员绕过 `main` 规则，但仅用于 CI/Vercel 门禁自身故障或需要立即恢复生产的紧急情况。正常功能、样式和文档改动不得使用绕过。绕过后必须补建 PR 或记录原因，并让 Git 历史、线上部署和后续修复重新一致。
+
+建议的最小 PR 模板：
+
+```markdown
+## 变更
+
+-
+
+## 检查
+
+- [ ] CI / release-check 通过
+- [ ] Vercel Preview 构建成功
+- [ ] 已打开 Preview 检查本次改动
+- [ ] 涉及 UI：检查 PC 和移动端
+- [ ] 涉及输入/导出：检查 Weeview SBS 和 FUJIFILM MPO
+
+Preview URL：
+```
+
+模板未来放在 `.github/pull_request_template.md`。这是推荐的低成本流程记录，不作为本轮文档修改之外的立即操作。
+
+## 4. 标准发布流程
+
+1. 从最新 `main` 创建功能分支。
+2. 按 `implementation.md` 完成一个模块并本地执行相应检查。
+3. 推送功能分支，等待 GitHub CI 和 Vercel Preview。
+4. 在 Preview 验收 PC 和移动端；涉及输入或导出时，在本地使用不进入 Git 的 Weeview 32.51MP SBS 与 FUJIFILM MPO 验收。
+5. 创建/更新 PR，记录 Preview URL、非敏感样本编号、已测结果和已知限制；真实样本不上传 Git、CI Artifact 或 Vercel。
+6. CI 与 Preview 验收通过后使用 Squash merge 合并到 `main`。
+7. Vercel 自动创建 Production Deployment，并将 `www.achillescat.com` 指向成功部署。
+8. 对生产域名执行 smoke test。
+
+## 5. Preview 与访问保护
+
+- 非生产分支默认作为 Vercel Preview，不影响生产域名。
+- 当前不启用 Standard Deployment Protection。即使 Vercel 官方文档说明部分基于 Vercel Authentication 的 Standard Protection 可用于所有计划，实际项目后台显示的可用范围、团队方案或所选保护方式可能要求付费；在没有明确需要前不升级、不启用。
+- 自动化访问受保护 Preview 时，使用 Vercel 提供的 Automation Bypass，不把绕过密钥写入仓库。
+- Preview 不得引用不应公开的真实照片；本项目的图像处理仍应保持本地进行。
+
+不开保护的影响：任何获得 Preview URL 的人都可能访问预发布页面。因此 Preview 中不得内置私人图片、密钥、未授权素材或敏感诊断数据。若未来出现这些内容，再重新评估免费可用的 Vercel Authentication、Shareable Link 或付费保护方案。
+
+## 6. 构建与上线检查
+
+本地/CI 最低命令：
 
 ```bash
 npm ci
 npm run release:check
-npm run preview:production
 ```
 
-The release check runs the automated tests, type checking, Vite production build, and a check that the HTML and GIF worker bundle exist in `dist`.
+Vercel 项目建议配置：
 
-## Cloudflare Pages
+- Framework Preset：Vite。
+- Build Command：`npm run build`。
+- Output Directory：`dist`。
+- Node.js：满足 `package.json` 的 `>=22.12.0`。
+- Production Branch：`main`。
 
-Create a Pages project from this repository and use:
+仓库已使用根目录 `vercel.json` 声明 Vercel 的构建、缓存和基础安全响应头；Cloudflare/Sites 遗留的 `_headers`、`wrangler.toml`、Sites Worker 与项目元数据均已移除。
 
-- Build command: `npm run build`
-- Build output directory: `dist`
-- Node.js version: `22.12.0` or newer
+2026-08-13 实测：
 
-The repository includes `wrangler.toml` with `pages_build_output_dir = "./dist"`. The `public/_headers` file is copied to the production output so hashed assets can be cached for a long time while the HTML entry stays fresh.
+- `https://www.achillescat.com` 返回 `200 OK`，服务端为 Vercel。
+- `https://achillescat.com` 返回 `308 Permanent Redirect`，正确跳转到 `https://www.achillescat.com/`。
+- 已有 `Strict-Transport-Security: max-age=63072000`。
+- 首页缓存为 `Cache-Control: public, max-age=0, must-revalidate`。
+- 未发现 CSP、`X-Content-Type-Options`、`Referrer-Policy`、`Permissions-Policy`。
 
-## Subpath deployments
-
-For a deployment below the domain root, set `VITE_BASE_PATH` during the build, including leading and trailing slashes. For example:
+检查命令：
 
 ```bash
-VITE_BASE_PATH=/photo-enhancer/ npm run build
+curl -I https://www.achillescat.com
+curl -I -L https://achillescat.com
 ```
 
-The default value is `/`, which is suitable for a custom domain or a Pages project root.
+Windows PowerShell 可直接使用：
 
-## Release checklist
+```powershell
+curl.exe -I https://www.achillescat.com
+curl.exe -I -L https://achillescat.com
+```
 
-- `npm ci` succeeds from a clean checkout.
-- `npm run release:check` passes.
-- The deployed page loads over HTTPS.
-- GIF export works in the deployed build.
-- A mobile viewport has no horizontal scroll.
-- The browser console has no production errors.
-- The deployed URL is tested with JPG, PNG, and MPO samples.
+浏览器也可在开发者工具的 Network 中选中首页请求，在 Response Headers 查看。应同时抽查首页、`/assets/` 下的哈希资源和 GIF Worker，因为不同路径可能使用不同缓存策略。
+
+`vercel.json` 不负责触发部署，也不取代当前“push Git → Vercel 自动部署”。它是随代码版本管理的 Vercel平台配置，可声明响应头、重定向、重写、构建命令和输出目录。本项目增加它的主要价值是：
+
+- 为所有部署稳定添加安全响应头。
+- 明确 HTML 与哈希静态资源的缓存策略。
+- 让 Preview 和 Production 使用相同、可审查、可回滚的配置。
+- 避免只在 Vercel Dashboard 手工设置而无法从 Git 判断某次部署用了什么规则。
+
+本项目使用 `vercel.json` 为 Preview 与 Production 统一声明基础安全响应头和缓存策略；部署后仍须以实际响应头为准执行 smoke。
+
+生产 Smoke：
+
+```bash
+npm run smoke:deployment -- https://www.achillescat.com
+```
+
+还需人工确认：
+
+- 首页和静态资源成功加载。
+- 页面没有生产控制台错误。
+- 移动端无横向滚动。
+- GIF Worker 能完成最小导出。
+- Weeview JPG 和 FUJIFILM MPO 核心路径可用。
+
+## 7. 回滚
+
+- 生产异常时优先在 Vercel 将 `www.achillescat.com` 回滚/重新指向上一成功部署，快速恢复访问。
+- 随后在 Git 中 revert 有问题的提交，通过 CI 和 Preview 后合并 `main`，使代码历史与线上状态重新一致。
+- 不使用强制推送或重写 `main` 历史处理线上事故。
+
+## 8. 待项目负责人确认
+
+- 已确认将 `main` 设置为禁止直接推送，只允许 PR + CI + Vercel Preview 验收后发布；尚需在 GitHub 仓库设置中实际启用规则。
+- 已确认暂不启用 Standard Deployment Protection。
+- 默认维持 Vercel 自动将成功的 `main` 部署绑定生产域名，暂不改为人工 Promote；如需变更仍需项目负责人确认。
+- 已确认允许后续修改 `.gitignore`，让五份正式文档进入 Git。实施时优先移除对整个 `docs/` 的忽略；若目录未来会存放本地材料，则改为只放行 `prd.md`、`ui.md`、`implementation.md`、`compatibility.md`、`deployment.md`。
+- 已完成：已增加并通过本地验证的最小 `vercel.json`，并清理 `_headers`、`wrangler.toml`、Sites Worker 与项目元数据。Vercel Preview 与 Production 的实际响应头仍需在部署后 smoke 确认。
+- 已确认使用轻量 PR 模板记录 Preview 验收，不设置他人审批要求。
+- 已确认统一使用 Squash merge，并保留管理员紧急绕过能力。
+- 已确认真实 Weeview 与 FUJIFILM 样本不进入 Git、Vercel 或 CI Artifact；OG 只提交优化后的最终分享图，不提交超大源图。
+
+## 9. 官方机制依据
+
+- Vercel Git 部署与 Production/Preview 分支：<https://vercel.com/docs/git>
+- Vercel 环境与 Preview/Production：<https://vercel.com/docs/deployments/environments>
+- Vercel Deployment Protection：<https://vercel.com/docs/deployment-protection>
+- Vercel 自定义域名随生产部署更新：<https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting>
+- Vercel `vercel.json` 与自定义响应头：<https://vercel.com/docs/project-configuration/vercel-json>

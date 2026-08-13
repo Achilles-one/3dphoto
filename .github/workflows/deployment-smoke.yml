@@ -1,0 +1,40 @@
+name: Deployment smoke
+
+on:
+  deployment_status:
+  workflow_call:
+    inputs:
+      url:
+        description: Deployed site URL
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Deployed site URL
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: deployment-smoke
+    if: github.event_name != 'deployment_status' || github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SMOKE_URL: ${{ inputs.url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify deployed homepage, assets, headers, and GIF Worker
+        run: npm run smoke:deployment -- "$SMOKE_URL"

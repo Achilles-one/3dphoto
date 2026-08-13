@@ -3,9 +3,10 @@ dist/
 .vite/
 .wrangler/
 .test-dist/
+/tests/photos/
+/assets/og-source/
 *.log
 .env
 .env.*
 !.env.example
-iteration.md
-prd.md
+Agents.md

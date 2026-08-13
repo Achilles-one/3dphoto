@@ -5,6 +5,7 @@ import type {
   AppState,
   ExportSize,
   InputDetection,
+  Locale,
   StereoLayout,
   UploadedFileInfo,
   UserFacingError,
@@ -12,11 +13,14 @@ import type {
 import type { ProcessedImageInfo } from '@/types/image';
 import type { StereoSplitResult } from '@/types/stereo';
 import { getAlignmentLimit } from '../core/alignment.ts';
+import { getFrameInterval, DEFAULT_FRAME_INTERVAL_MS } from '../core/wiggleParams.ts';
+import { getStoredLocale, storeLocale } from '../core/preferences.ts';
 
 const defaultSettings = {
   layout: 'auto',
   swapEyes: false,
-  speed: 50,
+  speed: DEFAULT_FRAME_INTERVAL_MS,
+  intermediateFrames: false,
   intensity: 0,
   alignmentX: 0,
   alignmentY: 0,
@@ -25,7 +29,26 @@ const defaultSettings = {
   isPlaying: true,
 } satisfies AppState['settings'];
 
-const errorCopy: Record<AppErrorCode, Omit<UserFacingError, 'code'>> = {
+export const diagnosticCodes: Record<AppErrorCode, string> = {
+  'unsupported-file': '3DP-I001',
+  'file-read-failed': '3DP-I002',
+  'file-too-large': '3DP-M001',
+  'image-too-small': '3DP-I003',
+  'decoded-image-too-large': '3DP-M002',
+  'image-too-large': '3DP-M003',
+  'export-failed': '3DP-E001',
+  'browser-unsupported': '3DP-B001',
+  'mpo-invalid': '3DP-P001',
+  'mpo-insufficient-views': '3DP-P002',
+  'mpo-decode-failed': '3DP-P003',
+  'mpo-extra-images': '3DP-P004',
+  'sbs-dimensions-mismatch': '3DP-E002',
+};
+
+const errorCopy: Record<
+  AppErrorCode,
+  Omit<UserFacingError, 'code' | 'diagnosticCode'>
+> = {
   'unsupported-file': {
     message: 'This file is not supported.',
     action: 'Try a JPG, PNG, or MPO.',
@@ -36,14 +59,24 @@ const errorCopy: Record<AppErrorCode, Omit<UserFacingError, 'code'>> = {
     action: 'Try another file.',
     recoverable: false,
   },
+  'file-too-large': {
+    message: 'This file is too large to process safely on this device.',
+    action: 'Choose a smaller image file.',
+    recoverable: false,
+  },
   'image-too-small': {
     message: 'This image is too small to split into two views.',
     action: 'Try a larger 3D photo.',
     recoverable: false,
   },
+  'decoded-image-too-large': {
+    message: 'This image has too many pixels to process safely on this device.',
+    action: 'Choose an image with smaller pixel dimensions.',
+    recoverable: false,
+  },
   'image-too-large': {
-    message: 'This image is too large to export.',
-    action: 'Try Small size.',
+    message: 'This export exceeds the safe memory budget for this device.',
+    action: 'Choose an available smaller size.',
     recoverable: true,
   },
   'export-failed': {
@@ -83,6 +116,22 @@ const errorCopy: Record<AppErrorCode, Omit<UserFacingError, 'code'>> = {
   },
 };
 
+const errorCopyZh: typeof errorCopy = {
+  'unsupported-file': { message: '不支持此文件。', action: '请选择 JPG、PNG 或 MPO。', recoverable: false },
+  'file-read-failed': { message: '无法读取此图片。', action: '请尝试其他文件。', recoverable: false },
+  'file-too-large': { message: '此文件过大，无法在当前设备安全处理。', action: '请选择更小的图片文件。', recoverable: false },
+  'image-too-small': { message: '此图片太小，无法拆分为双视图。', action: '请尝试更大的 3D 照片。', recoverable: false },
+  'decoded-image-too-large': { message: '此图片像素过多，无法在当前设备安全处理。', action: '请选择像素尺寸更小的图片。', recoverable: false },
+  'image-too-large': { message: '此导出超出当前设备的安全内存预算。', action: '请选择可用的较小尺寸。', recoverable: true },
+  'export-failed': { message: 'GIF 导出失败。', action: '请尝试较小的尺寸。', recoverable: true },
+  'browser-unsupported': { message: '您的浏览器不支持此功能。', action: '请使用最新版 Chrome、Edge 或 Safari。', recoverable: false },
+  'mpo-invalid': { message: '此 MPO 文件无效或不完整。', action: '请选择包含两个有效视图的 MPO。', recoverable: false },
+  'mpo-insufficient-views': { message: '此 MPO 不含两个有效视图。', action: '请选择由 3D 相机创建的 MPO。', recoverable: false },
+  'mpo-decode-failed': { message: '无法解码 MPO 中的图片。', action: '请尝试其他 MPO 文件。', recoverable: false },
+  'mpo-extra-images': { message: '此 MPO 包含超过两个视图。', action: 'Wiggle 预览仅使用前两个视图。', recoverable: true },
+  'sbs-dimensions-mismatch': { message: '两个视图尺寸不匹配，无法导出 SBS。', action: '请选择 GIF，或使用尺寸相同的 MPO。', recoverable: true },
+};
+
 function createFileInfo(file: File): UploadedFileInfo {
   return {
     name: file.name,
@@ -98,37 +147,41 @@ function prefersReducedMotion(): boolean {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function createUserFacingError(code: AppErrorCode): UserFacingError {
+export function createUserFacingError(code: AppErrorCode, locale: Locale = 'en'): UserFacingError {
   return {
     code,
-    ...errorCopy[code],
+    diagnosticCode: diagnosticCodes[code],
+    ...(locale === 'zh-CN' ? errorCopyZh : errorCopy)[code],
   };
 }
 
 export function useAppState() {
   const state = reactive<AppState>({
     phase: 'empty',
-    previewMode: 'split',
+    previewMode: 'align',
     selectedFile: null,
     processedImage: null,
     stereoSplit: null,
     detection: null,
     error: null,
+    locale: getStoredLocale(),
     settings: { ...defaultSettings },
   });
 
   function setUploadedFile(file: File) {
     state.phase = 'loading';
-    state.previewMode = 'split';
+    state.previewMode = 'align';
     state.selectedFile = createFileInfo(file);
     state.processedImage = null;
     state.stereoSplit = null;
     state.detection = null;
     state.error = null;
+    state.settings.layout = defaultSettings.layout;
     state.settings.alignmentX = defaultSettings.alignmentX;
     state.settings.alignmentY = defaultSettings.alignmentY;
     state.settings.overlayOpacity = defaultSettings.overlayOpacity;
     state.settings.speed = defaultSettings.speed;
+    state.settings.intermediateFrames = defaultSettings.intermediateFrames;
     state.settings.intensity = 0;
     state.settings.swapEyes = defaultSettings.swapEyes;
     state.settings.exportSize = defaultSettings.exportSize;
@@ -141,7 +194,7 @@ export function useAppState() {
     detection?: InputDetection,
   ) {
     state.phase = 'preview';
-    state.previewMode = 'split';
+    state.previewMode = 'align';
     state.processedImage = processedImage;
     state.stereoSplit = stereoSplit;
     state.detection = detection ?? null;
@@ -150,7 +203,7 @@ export function useAppState() {
 
   function showMpoPreview(stereoSplit: StereoSplitResult, detection: InputDetection) {
     state.phase = 'preview';
-    state.previewMode = 'split';
+    state.previewMode = 'align';
     state.processedImage = null;
     state.stereoSplit = stereoSplit;
     state.detection = detection;
@@ -160,13 +213,13 @@ export function useAppState() {
 
   function setError(code: AppErrorCode) {
     state.phase = 'error';
-    state.error = createUserFacingError(code);
+    state.error = createUserFacingError(code, state.locale);
   }
 
   function setRecoverableError(code: AppErrorCode) {
     state.phase = 'preview';
     state.error = {
-      ...createUserFacingError(code),
+      ...createUserFacingError(code, state.locale),
       recoverable: true,
     };
   }
@@ -174,7 +227,7 @@ export function useAppState() {
   function setUploadRejectedError() {
     if (state.stereoSplit) {
       state.error = {
-        ...createUserFacingError('unsupported-file'),
+        ...createUserFacingError('unsupported-file', state.locale),
         recoverable: true,
       };
       return;
@@ -197,9 +250,34 @@ export function useAppState() {
     state.error = null;
   }
 
+  function toggleLocale() {
+    state.locale = state.locale === 'zh-CN' ? 'en' : 'zh-CN';
+    storeLocale(state.locale);
+  }
+
+  function startCreatingWiggle() {
+    if (state.phase !== 'preview' || !state.stereoSplit) {
+      return false;
+    }
+
+    state.phase = 'creating';
+    state.error = null;
+    return true;
+  }
+
+  function finishCreatingWiggle() {
+    if (state.phase !== 'creating' || !state.stereoSplit) {
+      return;
+    }
+
+    state.phase = 'preview';
+    state.previewMode = 'wiggle';
+    state.settings.isPlaying = !prefersReducedMotion();
+  }
+
   function resetUpload() {
     state.phase = 'empty';
-    state.previewMode = 'split';
+    state.previewMode = 'align';
     state.selectedFile = null;
     state.processedImage = null;
     state.stereoSplit = null;
@@ -214,12 +292,16 @@ export function useAppState() {
 
   function setStereoSplit(stereoSplit: StereoSplitResult) {
     state.stereoSplit = stereoSplit;
-    state.previewMode = 'split';
+    state.previewMode = 'align';
     state.settings.isPlaying = false;
   }
 
   function setSpeed(speed: number) {
-    state.settings.speed = speed;
+    state.settings.speed = getFrameInterval(speed);
+  }
+
+  function toggleIntermediateFrames() {
+    state.settings.intermediateFrames = !state.settings.intermediateFrames;
   }
 
   function setAlignment(alignmentX: number, alignmentY: number) {
@@ -244,6 +326,7 @@ export function useAppState() {
 
   function resetAnimationSettings() {
     state.settings.speed = defaultSettings.speed;
+    state.settings.intermediateFrames = defaultSettings.intermediateFrames;
     state.settings.intensity = 0;
     state.settings.swapEyes = defaultSettings.swapEyes;
     state.settings.exportSize = defaultSettings.exportSize;
@@ -299,12 +382,16 @@ export function useAppState() {
     setRecoverableError,
     setUploadRejectedError,
     clearError,
+    toggleLocale,
     startExporting,
     finishExporting,
+    startCreatingWiggle,
+    finishCreatingWiggle,
     resetUpload,
     setLayout,
     setStereoSplit,
     setSpeed,
+    toggleIntermediateFrames,
     setAlignment,
     setOverlayOpacity,
     resetAlignment,

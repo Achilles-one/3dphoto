@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
-import GuideModal from "@/components/GuideModal.vue";
-import PrivacyModal from "@/components/PrivacyModal.vue";
 import { isAcceptedImageFile } from "@/utils/file";
+
+const props = defineProps<{
+  disabled?: boolean;
+  isLoading?: boolean;
+  locale: 'zh-CN' | 'en';
+}>();
 
 const emit = defineEmits<{
   fileAccepted: [file: File];
@@ -12,15 +16,17 @@ const emit = defineEmits<{
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
-const isGuideOpen = ref(false);
-const isPrivacyOpen = ref(false);
 
 function openFilePicker() {
+  if (props.disabled) {
+    return;
+  }
+
   fileInput.value?.click();
 }
 
 function handleCandidate(file: File | undefined) {
-  if (!file) {
+  if (!file || props.disabled) {
     return;
   }
 
@@ -40,54 +46,33 @@ function handleFileChange(event: Event) {
 
 function handleDrop(event: DragEvent) {
   isDragging.value = false;
+  if (props.disabled) {
+    return;
+  }
+
   handleCandidate(event.dataTransfer?.files[0]);
 }
 </script>
 
 <template>
-  <section class="upload-panel" aria-labelledby="upload-title">
-    <button
-      class="secondary-action guide-fixed-button"
-      type="button"
-      @click="isGuideOpen = true"
-    >
-      Guide
-    </button>
-
-    <header class="app-header">
-      <h1 id="upload-title">3D Photo Enhancer</h1>
-      <p class="subtitle">
-        Turn side-by-side 3D photos into wiggle animations instantly.
-      </p>
-      <p class="eyebrow">
-        Photos are processed locally in your browser.
-      </p>
-      <button class="privacy-link" type="button" @click="isPrivacyOpen = true">
-        Privacy details
-      </button>
-      <a
-        class="privacy-link"
-        href="mailto:?subject=3D%20Photo%20Enhancer%20feedback"
-      >
-        Send feedback
-      </a>
-    </header>
-
+  <section class="upload-panel" :aria-label="props.locale === 'en' ? 'Upload a 3D photo' : '上传 3D 照片'">
     <button
       class="drop-zone"
       :class="{ 'is-dragging': isDragging }"
       type="button"
+      :disabled="disabled"
       @click="openFilePicker"
       @dragenter.prevent="isDragging = true"
       @dragover.prevent="isDragging = true"
       @dragleave.prevent="isDragging = false"
       @drop.prevent="handleDrop"
     >
-      <span class="drop-zone-title">Choose a 3D photo</span>
+      <span class="drop-zone-title">{{ props.locale === 'en' ? 'Upload a 3D photo' : '上传 3D 照片' }}</span>
       <span class="drop-zone-hint">
-        Use a JPG or PNG with left and right views in one image, or an MPO stereo file.
+        {{ props.locale === 'en' ? 'Supports JPG, PNG, and MPO. Images stay in your browser.' : '支持 JPG、PNG 和 MPO；图片仅在您的浏览器中本地处理。' }}
       </span>
-      <span class="drop-zone-copy">or drop a JPG, PNG, or MPO here</span>
+      <span class="drop-zone-copy">{{ props.locale === 'en' ? 'Click to choose a file, or drop it here' : '点击选择文件，或拖放到这里' }}</span>
+      <span v-if="isLoading" class="upload-loading" role="status">{{ props.locale === 'en' ? 'Reading and parsing photo…' : '正在读取并解析照片…' }}</span>
     </button>
 
     <input
@@ -95,10 +80,8 @@ function handleDrop(event: DragEvent) {
       class="visually-hidden"
       type="file"
       accept="image/jpeg,image/png,image/mpo,.mpo"
+      :disabled="disabled"
       @change="handleFileChange"
     />
-
-    <GuideModal v-if="isGuideOpen" @closed="isGuideOpen = false" />
-    <PrivacyModal v-if="isPrivacyOpen" @closed="isPrivacyOpen = false" />
   </section>
 </template>

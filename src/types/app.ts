@@ -1,7 +1,7 @@
 import type { ProcessedImageInfo } from './image';
 import type { StereoSplitResult } from './stereo';
 
-export type AppPhase = 'empty' | 'loading' | 'preview' | 'exporting' | 'error';
+export type AppPhase = 'empty' | 'loading' | 'creating' | 'preview' | 'exporting' | 'error';
 
 export type PreviewMode = 'split' | 'align' | 'wiggle';
 
@@ -10,13 +10,18 @@ export type StereoLayout = 'auto' | 'side-by-side' | 'top-bottom';
 export type ExportSize = 'small' | 'medium' | 'large';
 
 export type ExportFormat = 'gif' | 'sbs';
+export type ExportFraming = 'crop-overlap' | 'full-frame';
 
 export type InputFormat = 'jpeg' | 'png' | 'mpo';
+
+export type Locale = 'zh-CN' | 'en';
 
 export type AppErrorCode =
   | 'unsupported-file'
   | 'file-read-failed'
+  | 'file-too-large'
   | 'image-too-small'
+  | 'decoded-image-too-large'
   | 'image-too-large'
   | 'export-failed'
   | 'browser-unsupported'
@@ -46,6 +51,7 @@ export interface InputDetection {
 
 export interface UserFacingError {
   code: AppErrorCode;
+  diagnosticCode: string;
   message: string;
   action: string;
   recoverable: boolean;
@@ -55,6 +61,7 @@ export interface WiggleSettings {
   layout: StereoLayout;
   swapEyes: boolean;
   speed: number;
+  intermediateFrames?: boolean;
   intensity: number;
   alignmentX: number;
   alignmentY: number;
@@ -71,5 +78,6 @@ export interface AppState {
   stereoSplit: StereoSplitResult | null;
   detection: InputDetection | null;
   error: UserFacingError | null;
+  locale: Locale;
   settings: WiggleSettings;
 }

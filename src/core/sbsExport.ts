@@ -1,6 +1,15 @@
 import type { StereoSplitResult } from '@/types/stereo';
 
-import type { GifExportProgress, GifExportTask } from './exportEngine.ts';
+import {
+  ExportCanceledError,
+  type GifExportProgress,
+  type GifExportTask,
+} from './exportEngine.ts';
+import {
+  estimateSbsEncodingMemoryBytes,
+  MemoryBudgetExceededError,
+  STANDARD_MEMORY_BUDGET,
+} from './memoryBudget.ts';
 
 export class SbsDimensionsMismatchError extends Error {
   constructor() {
@@ -37,6 +46,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 export function exportSbs(
   stereoSplit: StereoSplitResult,
   onProgress?: (progress: GifExportProgress) => void,
+  maxMemoryBytes = STANDARD_MEMORY_BUDGET.maxWorkingMemoryBytes,
 ): GifExportTask {
   const { leftView, rightView } = stereoSplit;
 
@@ -47,33 +57,55 @@ export function exportSbs(
     };
   }
 
+  if (estimateSbsEncodingMemoryBytes(stereoSplit) > maxMemoryBytes) {
+    return {
+      promise: Promise.reject(new MemoryBudgetExceededError()),
+      cancel: () => undefined,
+    };
+  }
+
+  let canceled = false;
   const promise = (async () => {
-    onProgress?.({ stage: 'preparing', progress: 0 });
     const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
 
-    if (!context) {
-      throw new Error('Canvas 2D context is unavailable.');
+    try {
+      onProgress?.({ stage: 'preparing', progress: 0 });
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        throw new Error('Canvas 2D context is unavailable.');
+      }
+
+      canvas.width = leftView.width + rightView.width;
+      canvas.height = leftView.height;
+      context.imageSmoothingEnabled = false;
+      context.drawImage(leftView.canvas, 0, 0, leftView.width, leftView.height);
+      context.drawImage(
+        rightView.canvas,
+        leftView.width,
+        0,
+        rightView.width,
+        rightView.height,
+      );
+      onProgress?.({ stage: 'encoding', progress: 0.7 });
+      const blob = await canvasToBlob(canvas);
+
+      if (canceled) {
+        throw new ExportCanceledError();
+      }
+
+      onProgress?.({ stage: 'ready', progress: 1 });
+      return blob;
+    } finally {
+      canvas.width = 1;
+      canvas.height = 1;
     }
-
-    canvas.width = leftView.width + rightView.width;
-    canvas.height = leftView.height;
-    context.imageSmoothingEnabled = false;
-    context.drawImage(leftView.canvas, 0, 0, leftView.width, leftView.height);
-    context.drawImage(
-      rightView.canvas,
-      leftView.width,
-      0,
-      rightView.width,
-      rightView.height,
-    );
-    onProgress?.({ stage: 'encoding', progress: 0.7 });
-    const blob = await canvasToBlob(canvas);
-    canvas.width = 1;
-    canvas.height = 1;
-    onProgress?.({ stage: 'ready', progress: 1 });
-    return blob;
   })();
 
-  return { promise, cancel: () => undefined };
+  return {
+    promise,
+    cancel: () => {
+      canceled = true;
+    },
+  };
 }

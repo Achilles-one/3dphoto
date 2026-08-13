@@ -2,10 +2,12 @@
 import { ref } from 'vue';
 
 import { useDialogFocus } from '@/composables/useDialogFocus';
+import type { Locale } from '@/types/app';
 
 const emit = defineEmits<{
   closed: [];
 }>();
+const props = defineProps<{ locale: Locale }>();
 
 const dialogElement = ref<HTMLElement | null>(null);
 useDialogFocus(dialogElement, () => emit('closed'));
@@ -22,75 +24,17 @@ useDialogFocus(dialogElement, () => emit('closed'));
         aria-labelledby="guide-title"
       >
         <header class="guide-header">
-          <div>
-            <p class="panel-kicker">Upload guide</p>
-            <h2 id="guide-title">What kind of photo should I upload?</h2>
-          </div>
-          <button class="modal-close" type="button" aria-label="Close guide" @click="emit('closed')">
-            Close
-          </button>
+          <div><p class="panel-kicker">{{ props.locale === 'en' ? 'Guide' : '使用指南' }}</p><h2 id="guide-title">{{ props.locale === 'en' ? 'Make a Wiggle in three steps' : '三步制作 Wiggle 动图' }}</h2></div>
         </header>
-
-        <p class="guide-copy">
-          This tool works with 3D photos that contain two views. Upload an SBS
-          or top-bottom image, or an MPO file from a 3D camera. MPO files with
-          more than two views use the first two views.
-        </p>
-
-        <p class="guide-copy">
-          For the best wiggle, review the split views first, align the main
-          subject until both views overlap cleanly, then create the animation.
-          Alignment currently handles horizontal and vertical offset only. If
-          the views still do not overlap, the source may also need rotation or
-          scale correction, which this version does not provide.
-        </p>
-
-        <p class="guide-copy">
-          Speed changes playback pace. One blended frame is used between the
-          left and right photos for a smoother loop. MPO files use the first
-          two valid views.
-        </p>
-
-        <div class="guide-grid">
-          <article class="guide-card">
-            <h3>Recommended</h3>
-            <div class="format-example side-by-side" aria-hidden="true">
-              <span>Left view</span>
-              <span>Right view</span>
-            </div>
-            <p>Side-by-side / SBS</p>
-          </article>
-
-          <article class="guide-card">
-            <h3>Also supported</h3>
-            <div class="format-example top-bottom" aria-hidden="true">
-              <span>Left view</span>
-              <span>Right view</span>
-            </div>
-            <p>Top-bottom stereo image</p>
-          </article>
-
-          <article class="guide-card">
-            <h3>Also supported</h3>
-            <div class="format-example mpo" aria-hidden="true">
-              <span>View 1</span>
-              <span>View 2</span>
-            </div>
-            <p>MPO stereo file</p>
-          </article>
-        </div>
-
-        <div class="unsupported-list">
-          <h3>Not supported yet</h3>
-          <ul>
-            <li>Regular single 2D photos</li>
-            <li>Two separate image uploads</li>
-            <li>MPO files with fewer than two valid views</li>
-          </ul>
-        </div>
+        <ol class="guide-steps">
+          <li><strong>{{ props.locale === 'en' ? 'Upload' : '上传' }}</strong><span>{{ props.locale === 'en' ? 'Upload an SBS or top-bottom JPG/PNG, or an MPO file.' : '上传左右拼接、上下拼接的 JPG/PNG，或 MPO 文件。' }}</span></li>
+          <li><strong>{{ props.locale === 'en' ? 'Align' : '对齐' }}</strong><span>{{ props.locale === 'en' ? 'Adjust horizontal, vertical, and overlay controls to align the subject.' : '调整水平、垂直偏移和叠加强度，让主体重合。' }}</span></li>
+          <li><strong>{{ props.locale === 'en' ? 'Download' : '下载' }}</strong><span>{{ props.locale === 'en' ? 'Create a Wiggle preview, then download GIF or SBS PNG.' : '创建 Wiggle 预览后，选择 GIF 或 SBS PNG 下载。' }}</span></li>
+        </ol>
+        <div class="unsupported-list"><h3>{{ props.locale === 'en' ? 'Supported' : '支持类型' }}</h3><p>JPG/JPEG, PNG, MPO</p><h3>{{ props.locale === 'en' ? 'Not supported' : '不支持' }}</h3><p>{{ props.locale === 'en' ? 'Regular single 2D photos, HEIC/WebP, videos, and archives' : '普通单张 2D、HEIC/WebP、视频和压缩包' }}</p></div>
 
         <button class="primary-action" type="button" @click="emit('closed')">
-          Got it
+          {{ props.locale === 'en' ? 'Got it' : '我知道了' }}
         </button>
       </section>
     </div>

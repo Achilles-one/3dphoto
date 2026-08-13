@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { useAppState } from '../src/app/appState.ts';
+import {
+  createUserFacingError,
+  diagnosticCodes,
+  useAppState,
+} from '../src/app/appState.ts';
 
 const stereoSplit = {
   layout: 'side-by-side',
@@ -9,20 +13,20 @@ const stereoSplit = {
   rightView: { width: 400, height: 300, dataUrl: '', canvas: null },
 } as never;
 
-test('upload starts in loading and preview starts in split mode', () => {
+test('upload starts in loading and preview starts in alignment mode', () => {
   const app = useAppState();
   const file = new File(['image'], 'sample.jpg', { type: 'image/jpeg' });
 
   app.setUploadedFile(file);
 
   assert.equal(app.state.phase, 'loading');
-  assert.equal(app.state.previewMode, 'split');
+  assert.equal(app.state.previewMode, 'align');
   assert.equal(app.state.selectedFile?.name, 'sample.jpg');
 
   app.showPreview({} as never, stereoSplit);
 
   assert.equal(app.state.phase, 'preview');
-  assert.equal(app.state.previewMode, 'split');
+  assert.equal(app.state.previewMode, 'align');
   assert.equal(app.state.stereoSplit?.layout, 'side-by-side');
   assert.equal(app.state.stereoSplit?.leftView.width, 400);
 });
@@ -85,11 +89,12 @@ test('reset upload clears the selected file, preview, and settings', () => {
   assert.equal(app.state.phase, 'empty');
   assert.equal(app.state.selectedFile, null);
   assert.equal(app.state.stereoSplit, null);
-  assert.equal(app.state.settings.speed, 50);
+  assert.equal(app.state.settings.speed, 200);
+  assert.equal(app.state.settings.intermediateFrames, false);
   assert.equal(app.state.settings.intensity, 0);
   assert.equal(app.state.settings.alignmentX, 0);
   assert.equal(app.state.settings.alignmentY, 0);
-  assert.equal(app.state.previewMode, 'split');
+  assert.equal(app.state.previewMode, 'align');
 });
 
 test('reset animation settings keeps alignment while restoring animation defaults', () => {
@@ -101,8 +106,31 @@ test('reset animation settings keeps alignment while restoring animation default
 
   app.resetAnimationSettings();
 
-  assert.equal(app.state.settings.speed, 50);
+  assert.equal(app.state.settings.speed, 200);
+  assert.equal(app.state.settings.intermediateFrames, false);
   assert.equal(app.state.settings.swapEyes, false);
   assert.equal(app.state.settings.alignmentX, 18);
   assert.equal(app.state.settings.alignmentY, -10);
+});
+
+test('speed is integer-clamped and intermediate frames can be toggled', () => {
+  const app = useAppState();
+
+  app.setSpeed(99.4);
+  assert.equal(app.state.settings.speed, 100);
+  app.setSpeed(2000.6);
+  assert.equal(app.state.settings.speed, 2000);
+
+  assert.equal(app.state.settings.intermediateFrames, false);
+  app.toggleIntermediateFrames();
+  assert.equal(app.state.settings.intermediateFrames, true);
+});
+
+test('user-facing errors expose unique stable diagnostic codes', () => {
+  const codes = Object.values(diagnosticCodes);
+
+  assert.equal(new Set(codes).size, codes.length);
+  assert.ok(codes.every((code) => /^3DP-[IBMEP]\d{3}$/.test(code)));
+  assert.equal(createUserFacingError('mpo-invalid').diagnosticCode, '3DP-P001');
+  assert.equal(createUserFacingError('export-failed').diagnosticCode, '3DP-E001');
 });
