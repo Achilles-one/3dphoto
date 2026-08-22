@@ -38,25 +38,49 @@ function emitSpeed(event: Event) {
 <template>
   <section class="controls-panel" :aria-label="props.locale === 'en' ? 'Preview controls' : '预览控制'">
     <template v-if="!isWiggleMode">
-      <div class="align-control-stack">
-        <div class="slider-grid align-slider-grid">
-          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Horizontal' : '水平偏移' }} <strong>{{ settings.alignmentX }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentX" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Horizontal alignment' : '水平偏移'" @input="emit('alignmentChanged', sliderValue($event), settings.alignmentY)" /></label>
-          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Vertical' : '垂直偏移' }} <strong>{{ settings.alignmentY }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentY" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Vertical alignment' : '垂直偏移'" @input="emit('alignmentChanged', settings.alignmentX, sliderValue($event))" /></label>
-          <label class="slider-control"><span>{{ props.locale === 'en' ? 'Overlay' : '叠加强度' }} <strong>{{ Math.round(settings.overlayOpacity * 100) }}%</strong></span><input type="range" min="10" max="90" :value="Math.round(settings.overlayOpacity * 100)" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Overlay opacity' : '叠加强度'" @input="emit('overlayOpacityChanged', sliderValue($event) / 100)" /></label>
-          <button class="secondary-action reset-action" type="button" :disabled="disabled" @click="emit('alignmentReset')">{{ props.locale === 'en' ? 'Reset alignment' : '重置对齐' }}</button>
+      <div class="control-group">
+        <header class="control-group-header">
+          <span class="control-group-label">{{ props.locale === 'en' ? 'ALIGN' : '对齐' }}</span>
+          <span class="control-group-note">{{ props.locale === 'en' ? 'Calibration' : '校准' }}</span>
+        </header>
+        <div class="align-control-stack">
+          <div class="slider-grid align-slider-grid">
+            <label class="slider-control"><span>{{ props.locale === 'en' ? 'Horizontal' : '水平偏移' }} <strong>{{ settings.alignmentX }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentX" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Horizontal alignment' : '水平偏移'" @input="emit('alignmentChanged', sliderValue($event), settings.alignmentY)" /></label>
+            <label class="slider-control"><span>{{ props.locale === 'en' ? 'Vertical' : '垂直偏移' }} <strong>{{ settings.alignmentY }}px</strong></span><input type="range" :min="-alignmentLimit" :max="alignmentLimit" :value="settings.alignmentY" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Vertical alignment' : '垂直偏移'" @input="emit('alignmentChanged', settings.alignmentX, sliderValue($event))" /></label>
+            <label class="slider-control"><span>{{ props.locale === 'en' ? 'Overlay' : '叠加强度' }} <strong>{{ Math.round(settings.overlayOpacity * 100) }}%</strong></span><input type="range" min="10" max="90" :value="Math.round(settings.overlayOpacity * 100)" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Overlay opacity' : '叠加强度'" @input="emit('overlayOpacityChanged', sliderValue($event) / 100)" /></label>
+            <button class="secondary-action reset-action" type="button" :disabled="disabled" @click="emit('alignmentReset')">{{ props.locale === 'en' ? 'Reset alignment' : '重置对齐' }}</button>
+          </div>
         </div>
+      </div>
+      <div class="control-group control-group-action">
+        <header class="control-group-header">
+          <span class="control-group-label">{{ props.locale === 'en' ? 'MOTION' : '运动' }}</span>
+          <span class="control-group-note">{{ props.locale === 'en' ? 'Create' : '创建' }}</span>
+        </header>
         <button class="primary-action workspace-action" type="button" :disabled="disabled" @click="emit('createWiggleRequested')">{{ props.locale === 'en' ? 'Create Wiggle' : '创建 Wiggle' }}</button>
       </div>
     </template>
     <template v-else>
-      <div class="wiggle-control-grid">
-        <label class="speed-control">{{ props.locale === 'en' ? 'Speed' : '速度' }} <span><input type="number" min="100" max="2000" step="1" :value="settings.speed" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Frame interval, 100 to 2000 milliseconds' : '每帧间隔，100 到 2000 毫秒'" @change="emitSpeed" /> ms</span></label>
-        <button type="button" :disabled="disabled" @click="emit('playbackToggled')">{{ settings.isPlaying ? (props.locale === 'en' ? 'Pause' : '暂停') : (props.locale === 'en' ? 'Play' : '播放') }}</button>
-        <button type="button" :disabled="disabled" @click="emit('swapEyesToggled')">{{ props.locale === 'en' ? 'Swap eyes' : '交换左右眼' }}</button>
-        <button type="button" :disabled="disabled" :aria-pressed="settings.intermediateFrames !== false" @click="emit('intermediateFrameToggled')">{{ props.locale === 'en' ? `Intermediate: ${settings.intermediateFrames !== false ? 'On' : 'Off'}` : `中间帧：${settings.intermediateFrames !== false ? '开启' : '关闭'}` }}</button>
-        <button type="button" :disabled="disabled" @click="emit('alignPreviewRequested')">{{ props.locale === 'en' ? 'Adjust alignment' : '调整对齐' }}</button>
+      <div class="control-group">
+        <header class="control-group-header">
+          <span class="control-group-label">{{ props.locale === 'en' ? 'MOTION' : '运动' }}</span>
+          <span class="control-group-note">{{ props.locale === 'en' ? 'Playback' : '播放' }}</span>
+        </header>
+        <div class="wiggle-control-grid">
+          <label class="speed-control">{{ props.locale === 'en' ? 'Speed' : '速度' }} <span><input type="number" min="100" max="2000" step="1" :value="settings.speed" :disabled="disabled" :aria-label="props.locale === 'en' ? 'Frame interval, 100 to 2000 milliseconds' : '每帧间隔，100 到 2000 毫秒'" @change="emitSpeed" /> ms</span></label>
+          <button type="button" :disabled="disabled" @click="emit('playbackToggled')">{{ settings.isPlaying ? (props.locale === 'en' ? 'Pause' : '暂停') : (props.locale === 'en' ? 'Play' : '播放') }}</button>
+          <button type="button" :disabled="disabled" @click="emit('swapEyesToggled')">{{ props.locale === 'en' ? 'Swap eyes' : '交换左右眼' }}</button>
+          <button type="button" :disabled="disabled" :aria-pressed="settings.intermediateFrames !== false" @click="emit('intermediateFrameToggled')">{{ props.locale === 'en' ? `Intermediate: ${settings.intermediateFrames !== false ? 'On' : 'Off'}` : `中间帧：${settings.intermediateFrames !== false ? '开启' : '关闭'}` }}</button>
+          <button type="button" :disabled="disabled" @click="emit('alignPreviewRequested')">{{ props.locale === 'en' ? 'Adjust alignment' : '调整对齐' }}</button>
+        </div>
       </div>
-      <button class="primary-action workspace-action" type="button" :disabled="disabled" @click="emit('exportDialogRequested')">{{ props.locale === 'en' ? 'Download' : '下载' }}</button>
+      <div class="control-group control-group-action">
+        <header class="control-group-header">
+          <span class="control-group-label">{{ props.locale === 'en' ? 'EXPORT' : '导出' }}</span>
+          <span class="control-group-note">{{ props.locale === 'en' ? 'Save result' : '保存结果' }}</span>
+        </header>
+        <button class="primary-action workspace-action" type="button" :disabled="disabled" @click="emit('exportDialogRequested')">{{ props.locale === 'en' ? 'Download' : '下载' }}</button>
+      </div>
     </template>
   </section>
 </template>

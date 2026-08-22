@@ -104,9 +104,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="preview-panel" aria-labelledby="preview-title">
-
-
+  <section class="preview-panel preview-stage-panel" :aria-label="locale === 'en' ? 'Wiggle preview' : 'Wiggle 预览'">
+    <div class="stage-caption">
+      <span class="stage-caption-label">{{ locale === 'en' ? 'WIGGLE STAGE' : 'Wiggle 舞台' }}</span>
+      <span class="stage-caption-note">{{ locale === 'en' ? 'Preview depth motion' : '预览深度运动' }}</span>
+    </div>
     <div
       ref="previewStage"
       class="preview-stage"
@@ -122,7 +124,7 @@ onBeforeUnmount(() => {
             v-if="hasPreview"
             ref="canvasElement"
             class="wiggle-canvas"
-            aria-label="Wiggle preview"
+            :aria-label="locale === 'en' ? 'Wiggle preview' : 'Wiggle 预览'"
           />
         </div>
 

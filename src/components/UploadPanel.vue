@@ -56,6 +56,10 @@ function handleDrop(event: DragEvent) {
 
 <template>
   <section class="upload-panel" :aria-label="props.locale === 'en' ? 'Upload a 3D photo' : '上传 3D 照片'">
+    <div class="upload-panel-mark" aria-hidden="true">
+      <span>01</span>
+      <span>{{ props.locale === 'en' ? 'STEREO SOURCE' : '立体素材' }}</span>
+    </div>
     <button
       class="drop-zone"
       :class="{ 'is-dragging': isDragging }"

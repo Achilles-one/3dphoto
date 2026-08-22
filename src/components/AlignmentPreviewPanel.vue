@@ -84,14 +84,18 @@ watch(
 </script>
 
 <template>
-  <section class="alignment-panel" aria-label="Alignment preview">
+  <section class="alignment-panel preview-stage-panel" :aria-label="locale === 'en' ? 'Alignment preview' : '对齐预览'">
+    <div class="stage-caption">
+      <span class="stage-caption-label">{{ locale === 'en' ? 'ALIGNMENT STAGE' : '对齐舞台' }}</span>
+      <span class="stage-caption-note">{{ locale === 'en' ? 'Calibrate the pair' : '校准左右眼画面' }}</span>
+    </div>
     <div class="align-stage">
       <template v-if="phase === 'loading'">{{ locale === 'en' ? 'Preparing alignment preview…' : '正在准备对齐预览…' }}</template>
       <template v-else-if="stereoSplit">
         <canvas
           ref="canvasElement"
           class="alignment-canvas"
-          aria-label="Overlapped left and right views"
+          :aria-label="locale === 'en' ? 'Overlapped left and right views' : '左右眼叠加画面'"
         />
       </template>
       <template v-else>

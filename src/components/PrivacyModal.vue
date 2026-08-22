@@ -31,18 +31,16 @@ function updateAnalytics(event: Event) {
         aria-modal="true"
         aria-labelledby="privacy-title"
       >
-        <header class="guide-header">
+        <header class="dialog-header">
           <div>
             <p class="panel-kicker">{{ props.locale === 'en' ? 'Privacy' : '隐私政策' }}</p>
             <h2 id="privacy-title">{{ props.locale === 'en' ? 'All data is processed locally and is not sent/saved online' : '所有数据均在本地处理，不会发送或保存到线上' }}</h2>
           </div>
-          <!-- <button class="modal-close" type="button" @click="emit('closed')">
-            {{ props.locale === 'en' ? 'Close' : '关闭' }}
-          </button> -->
+          <span class="dialog-index" aria-hidden="true">PRIVACY / 01</span>
         </header>
 
         <p class="guide-copy">
-          {{ props.locale === 'en' ? '3D Photo Enhancer decodes, previews, animates, and exports images locally in your browser. Original photo pixels, MPO contents, and generated files are not uploaded by this tool.' : '3D Photo Enhancer 会在您的浏览器中本地解码、预览、制作和导出图片。原始像素、MPO 内容与生成文件都不会上传。' }}
+          {{ props.locale === 'en' ? '3D Photo Lab decodes, previews, animates, and exports images locally in your browser. Original photo pixels, MPO contents, and generated files are not uploaded by this tool.' : '3D Photo Lab 会在您的浏览器中本地解码、预览、制作和导出图片。原始像素、MPO 内容与生成文件都不会上传。' }}
         </p>
         <p class="guide-copy">
           {{ props.locale === 'en' ? 'Any future online sharing will require a separate, explicit upload and deletion policy.' : '未来如增加在线分享功能，将另行提供明确的上传与删除政策。' }}
@@ -60,7 +58,7 @@ function updateAnalytics(event: Event) {
           </span>
         </label>
 
-        <button class="primary-action" type="button" @click="emit('closed')">
+        <button class="primary-action privacy-confirm" type="button" @click="emit('closed')">
           {{ props.locale === 'en' ? 'Got it' : '我知道了' }}
         </button>
       </section>

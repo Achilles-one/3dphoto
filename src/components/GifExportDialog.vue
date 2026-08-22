@@ -39,6 +39,7 @@ const copy = computed(() => isEn.value ? {
   kicker: "Download", title: "Download", format: "Format", gif: "Animated Wiggle", sbs: "Original SBS PNG", framing: "Export framing",
   cropOverlap: "Crop overlap", fullFrame: "Full frame (keep edge background)", cropHint: "No white edges; image edges will be cropped.", fullHint: "Keeps all content; edge background may appear.",
   size: "GIF size (maximum edge)", estimated: "Estimated", unavailable: "Unavailable on this device",
+  small: "Small", medium: "Medium", large: "Large",
   noUpscale: "No upscaling", preparing: "Preparing frames", encoding: "Encoding", progress: "Keep this window open while the file is created.",
   cancel: "Cancel", cancelExport: "Cancel export", confirm: "Confirm download", creating: "Creating file…",
   conservative: "A conservative memory limit is active for this device.", none: "No GIF size fits the current device memory budget.",
@@ -46,6 +47,7 @@ const copy = computed(() => isEn.value ? {
   kicker: "下载", title: "下载", format: "输出格式", gif: "Wiggle 动图", sbs: "原始 SBS PNG", framing: "导出取景",
   cropOverlap: "裁切重叠区", fullFrame: "完整画面（保留边缘背景）", cropHint: "无白边，边缘会裁切。", fullHint: "保留全部内容，可能出现边缘背景。",
   size: "GIF 尺寸（最长边）", estimated: "预计", unavailable: "当前设备不可用",
+  small: "小", medium: "中", large: "大",
   noUpscale: "不放大源图", preparing: "正在准备帧", encoding: "正在编码", progress: "文件创建期间请保持此窗口打开。",
   cancel: "取消", cancelExport: "取消导出", confirm: "确认下载", creating: "正在创建文件…",
   conservative: "当前设备使用保守内存限制。", none: "当前设备没有可执行的 GIF 尺寸。",
@@ -76,7 +78,7 @@ const exportSizes = computed(() => (["small", "medium", "large"] as ExportSize[]
     isSourceSize ? copy.value.noUpscale : null,
     plan && !plan.allowed ? copy.value.unavailable : null,
   ].filter(Boolean).join(" · ");
-  return { value, label: value[0]!.toUpperCase() + value.slice(1), disabled: Boolean(plan && !plan.allowed), description };
+  return { value, label: copy.value[value], disabled: Boolean(plan && !plan.allowed), description };
 }));
 
 const memoryGuidance = computed(() => {
@@ -94,21 +96,84 @@ const sbsDescription = computed(() => {
 </script>
 
 <template>
-  <Teleport to="body"><div class="modal-backdrop" role="presentation" @click.self="emit('canceled')"><section ref="dialogElement" class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
-    <header class="guide-header"><div><p class="panel-kicker">{{ copy.kicker }}</p><h2 id="export-title">{{ copy.title }}</h2></div></header>
-    <fieldset v-if="isMpo" class="export-format-options" :disabled="isExporting"><legend>{{ copy.format }}</legend>
-      <label :class="{ active: selectedFormat === 'gif' }"><input v-model="selectedFormat" type="radio" name="export-format" value="gif" /><span><strong>GIF</strong><small>{{ copy.gif }}</small></span></label>
-      <label :class="{ active: selectedFormat === 'sbs' }"><input v-model="selectedFormat" type="radio" name="export-format" value="sbs" :disabled="!sbsMemoryPlan?.allowed" /><span><strong>SBS PNG</strong><small>{{ sbsDescription }}</small></span></label>
-    </fieldset>
-    <p v-if="memoryGuidance" class="memory-guidance" aria-live="polite">{{ memoryGuidance }}</p>
-    <fieldset v-if="selectedFormat === 'gif'" class="export-format-options" :disabled="isExporting"><legend>{{ copy.framing }}</legend>
-      <label :class="{ active: selectedFraming === 'crop-overlap' }"><input v-model="selectedFraming" type="radio" name="export-framing" value="crop-overlap" /><span><strong>{{ copy.cropOverlap }}</strong><small>{{ copy.cropHint }}</small></span></label>
-      <label :class="{ active: selectedFraming === 'full-frame' }"><input v-model="selectedFraming" type="radio" name="export-framing" value="full-frame" /><span><strong>{{ copy.fullFrame }}</strong><small>{{ copy.fullHint }}</small></span></label>
-    </fieldset>
-    <fieldset v-if="selectedFormat === 'gif'" class="export-size-options" :disabled="isExporting"><legend>{{ copy.size }}</legend>
-      <label v-for="size in exportSizes" :key="size.value" :class="{ active: selectedSize === size.value, unavailable: size.disabled }"><input v-model="selectedSize" type="radio" name="gif-size" :value="size.value" :disabled="size.disabled" /><span><strong>{{ size.label }}</strong><small>{{ size.description }}</small></span></label>
-    </fieldset>
-    <div v-if="isExporting" class="export-progress" aria-live="polite"><div class="export-progress-heading"><strong>{{ progress.stage === 'preparing' ? copy.preparing : copy.encoding }}</strong><span>{{ Math.round(progress.progress * 100) }}%</span></div><div class="export-progress-track" aria-hidden="true"><span :style="{ width: `${Math.max(4, progress.progress * 100)}%` }" /></div><p>{{ copy.progress }}</p></div>
-    <div class="dialog-actions"><button type="button" @click="emit('canceled')">{{ isExporting ? copy.cancelExport : copy.cancel }}</button><button class="primary-action" type="button" :disabled="!canConfirm" @click="emit('confirmed', selectedFormat, selectedSize, selectedFraming)">{{ isExporting ? copy.creating : copy.confirm }}</button></div>
-  </section></div></Teleport>
+  <Teleport to="body">
+    <div class="modal-backdrop" role="presentation" @click.self="emit('canceled')">
+      <section
+        ref="dialogElement"
+        class="export-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-title"
+      >
+        <header class="dialog-header">
+          <div>
+            <p class="panel-kicker">{{ copy.kicker }}</p>
+            <h2 id="export-title">{{ copy.title }}</h2>
+          </div>
+          <span class="dialog-index" aria-hidden="true">EXPORT / 01</span>
+        </header>
+
+        <fieldset v-if="isMpo" class="export-format-options" :disabled="isExporting">
+          <legend>{{ copy.format }}</legend>
+          <label :class="{ active: selectedFormat === 'gif' }">
+            <input v-model="selectedFormat" type="radio" name="export-format" value="gif" />
+            <span><strong>GIF</strong><small>{{ copy.gif }}</small></span>
+          </label>
+          <label :class="{ active: selectedFormat === 'sbs' }">
+            <input v-model="selectedFormat" type="radio" name="export-format" value="sbs" :disabled="!sbsMemoryPlan?.allowed" />
+            <span><strong>SBS PNG</strong><small>{{ sbsDescription }}</small></span>
+          </label>
+        </fieldset>
+
+        <p v-if="memoryGuidance" class="memory-guidance" aria-live="polite">{{ memoryGuidance }}</p>
+
+        <fieldset v-if="selectedFormat === 'gif'" class="export-format-options" :disabled="isExporting">
+          <legend>{{ copy.framing }}</legend>
+          <label :class="{ active: selectedFraming === 'crop-overlap' }">
+            <input v-model="selectedFraming" type="radio" name="export-framing" value="crop-overlap" />
+            <span><strong>{{ copy.cropOverlap }}</strong><small>{{ copy.cropHint }}</small></span>
+          </label>
+          <label :class="{ active: selectedFraming === 'full-frame' }">
+            <input v-model="selectedFraming" type="radio" name="export-framing" value="full-frame" />
+            <span><strong>{{ copy.fullFrame }}</strong><small>{{ copy.fullHint }}</small></span>
+          </label>
+        </fieldset>
+
+        <fieldset v-if="selectedFormat === 'gif'" class="export-size-options" :disabled="isExporting">
+          <legend>{{ copy.size }}</legend>
+          <label
+            v-for="size in exportSizes"
+            :key="size.value"
+            :class="{ active: selectedSize === size.value, unavailable: size.disabled }"
+          >
+            <input v-model="selectedSize" type="radio" name="gif-size" :value="size.value" :disabled="size.disabled" />
+            <span><strong>{{ size.label }}</strong><small>{{ size.description }}</small></span>
+          </label>
+        </fieldset>
+
+        <div v-if="isExporting" class="export-progress" aria-live="polite" aria-busy="true">
+          <div class="export-progress-heading">
+            <strong>{{ progress.stage === 'preparing' ? copy.preparing : copy.encoding }}</strong>
+            <span>{{ Math.round(progress.progress * 100) }}%</span>
+          </div>
+          <div class="export-progress-track" aria-hidden="true">
+            <span :style="{ width: `${Math.max(4, progress.progress * 100)}%` }" />
+          </div>
+          <p>{{ copy.progress }}</p>
+        </div>
+
+        <div class="dialog-actions">
+          <button type="button" @click="emit('canceled')">{{ isExporting ? copy.cancelExport : copy.cancel }}</button>
+          <button
+            class="primary-action"
+            :class="{ 'is-loading': isExporting }"
+            type="button"
+            :disabled="!canConfirm"
+            :aria-busy="isExporting"
+            @click="emit('confirmed', selectedFormat, selectedSize, selectedFraming)"
+          >{{ isExporting ? copy.creating : copy.confirm }}</button>
+        </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
