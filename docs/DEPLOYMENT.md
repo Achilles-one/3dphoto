@@ -72,7 +72,7 @@ Preview URL：
 ## 4. 标准发布流程
 
 1. 从最新 `main` 创建功能分支。
-2. 按 `implementation.md` 完成一个模块并本地执行相应检查。
+2. 按 `DEVELOPMENT.md` 完成一个可验收变更，并按 `QUALITY.md` 执行相应检查。
 3. 推送功能分支，等待 GitHub CI 和 Vercel Preview。
 4. 在 Preview 验收 PC 和移动端；涉及输入或导出时，在本地使用不进入 Git 的 Weeview 32.51MP SBS 与 FUJIFILM MPO 验收。
 5. 创建/更新 PR，记录 Preview URL、非敏感样本编号、已测结果和已知限制；真实样本不上传 Git、CI Artifact 或 Vercel。
@@ -166,7 +166,7 @@ npm run smoke:deployment -- https://www.achillescat.com
 - 已确认将 `main` 设置为禁止直接推送，只允许 PR + CI + Vercel Preview 验收后发布；尚需在 GitHub 仓库设置中实际启用规则。
 - 已确认暂不启用 Standard Deployment Protection。
 - 默认维持 Vercel 自动将成功的 `main` 部署绑定生产域名，暂不改为人工 Promote；如需变更仍需项目负责人确认。
-- 已确认允许后续修改 `.gitignore`，让五份正式文档进入 Git。实施时优先移除对整个 `docs/` 的忽略；若目录未来会存放本地材料，则改为只放行 `prd.md`、`ui.md`、`implementation.md`、`compatibility.md`、`deployment.md`。
+- 稳定项目文档和 `docs/design/` 中的设计基线纳入 Git；仅 `design/exploration/`、`design/drafts/` 和 `design/generations/` 等生成素材目录忽略。
 - 已完成：已增加并通过本地验证的最小 `vercel.json`，并清理 `_headers`、`wrangler.toml`、Sites Worker 与项目元数据。Vercel Preview 与 Production 的实际响应头仍需在部署后 smoke 确认。
 - 已确认使用轻量 PR 模板记录 Preview 验收，不设置他人审批要求。
 - 已确认统一使用 Squash merge，并保留管理员紧急绕过能力。

@@ -1,3 +1,4 @@
+import type { WiggleSettings } from '@/types/app';
 import type { StereoSplitResult } from '@/types/stereo';
 
 import {
@@ -10,6 +11,7 @@ import {
   MemoryBudgetExceededError,
   STANDARD_MEMORY_BUDGET,
 } from './memoryBudget.ts';
+import { getOrderedViews } from './renderGeometry.ts';
 
 export class SbsDimensionsMismatchError extends Error {
   constructor() {
@@ -45,10 +47,11 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 export function exportSbs(
   stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
   onProgress?: (progress: GifExportProgress) => void,
   maxMemoryBytes = STANDARD_MEMORY_BUDGET.maxWorkingMemoryBytes,
 ): GifExportTask {
-  const { leftView, rightView } = stereoSplit;
+  const [firstView, secondView] = getOrderedViews(stereoSplit, settings);
 
   if (!getSbsOutputDimensions(stereoSplit)) {
     return {
@@ -76,16 +79,16 @@ export function exportSbs(
         throw new Error('Canvas 2D context is unavailable.');
       }
 
-      canvas.width = leftView.width + rightView.width;
-      canvas.height = leftView.height;
+      canvas.width = firstView.width + secondView.width;
+      canvas.height = firstView.height;
       context.imageSmoothingEnabled = false;
-      context.drawImage(leftView.canvas, 0, 0, leftView.width, leftView.height);
+      context.drawImage(firstView.canvas, 0, 0, firstView.width, firstView.height);
       context.drawImage(
-        rightView.canvas,
-        leftView.width,
+        secondView.canvas,
+        firstView.width,
         0,
-        rightView.width,
-        rightView.height,
+        secondView.width,
+        secondView.height,
       );
       onProgress?.({ stage: 'encoding', progress: 0.7 });
       const blob = await canvasToBlob(canvas);

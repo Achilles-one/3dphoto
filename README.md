@@ -13,6 +13,19 @@ npm run dev
 
 The application is a Vue 3 and Vite static site. No backend is required for local photo processing.
 
+## Documentation
+
+Start with [`docs/STATUS.md`](docs/STATUS.md) for the current project state.
+
+- Product scope and user flow: [`docs/PRD.md`](docs/PRD.md)
+- Interaction rules: [`docs/UI.md`](docs/UI.md)
+- Page specifications: [`docs/pages/`](docs/pages/)
+- Development loop: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+- Architecture boundaries: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Quality gates: [`docs/QUALITY.md`](docs/QUALITY.md)
+- Design baseline: [`docs/design/`](docs/design/)
+- Release history: [`docs/RELEASES.md`](docs/RELEASES.md)
+
 ## Test and release checks
 
 ```bash
@@ -45,7 +58,7 @@ The smoke test checks the homepage, referenced static assets, required security 
 ## Privacy boundary
 
 - Image bytes, decoded pixels, MPO contents, and generated downloads remain in the browser by default.
-- Product analytics is optional and only sends when an endpoint is configured and the in-app analytics toggle is enabled. The current CSP permits same-origin connections only; any future analytics host requires an explicit privacy review and CSP change.
+- Product analytics is disabled by default. It sends only when an endpoint is configured and the user has explicitly enabled the in-app analytics toggle; closing the privacy dialog without enabling it must not send events. The current CSP permits same-origin connections only; any future analytics host requires an explicit privacy review and CSP change.
 - Current analytics metadata can include event properties, browser user agent, and coarse pointer/device type. It must not include filenames, image pixels, raw MPO bytes, or reversible image identifiers.
 - The GitHub feedback link includes version and non-sensitive diagnostics, never the uploaded image or filename.
 

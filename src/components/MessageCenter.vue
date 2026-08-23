@@ -13,7 +13,7 @@ const icons: Record<AppMessage['type'], string> = {
 };
 
 const labels: Record<AppMessage['type'], { en: string; zh: string }> = {
-  success: { en: 'Success', zh: '完成' },
+  success: { en: 'Success', zh: '成功' },
   info: { en: 'Info', zh: '提示' },
   warning: { en: 'Notice', zh: '注意' },
   error: { en: 'Error', zh: '错误' },
@@ -21,7 +21,12 @@ const labels: Record<AppMessage['type'], { en: string; zh: string }> = {
 </script>
 
 <template>
-  <section class="message-center" aria-live="polite" aria-atomic="false">
+  <section
+    class="message-center"
+    :aria-label="locale === 'en' ? 'Status messages' : '状态消息'"
+    aria-live="polite"
+    aria-atomic="false"
+  >
     <article
       v-for="message in messages"
       :key="message.id"

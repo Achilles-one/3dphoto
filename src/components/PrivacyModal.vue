@@ -31,12 +31,10 @@ function updateAnalytics(event: Event) {
         aria-modal="true"
         aria-labelledby="privacy-title"
       >
-        <header class="dialog-header">
-          <div>
-            <p class="panel-kicker">{{ props.locale === 'en' ? 'Privacy' : '隐私政策' }}</p>
-            <h2 id="privacy-title">{{ props.locale === 'en' ? 'All data is processed locally and is not sent/saved online' : '所有数据均在本地处理，不会发送或保存到线上' }}</h2>
-          </div>
-          <span class="dialog-index" aria-hidden="true">PRIVACY / 01</span>
+        <header class="dialog-header privacy-dialog-header">
+          <p class="panel-kicker">{{ props.locale === 'en' ? 'Privacy' : '隐私政策' }}</p>
+          <!-- <span class="dialog-index" aria-hidden="true">PRIVACY / 01</span> -->
+          <h2 id="privacy-title">{{ props.locale === 'en' ? 'All data is processed locally and is not sent/saved online' : '所有数据均在本地处理，不会发送或保存到线上' }}</h2>
         </header>
 
         <p class="guide-copy">

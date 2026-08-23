@@ -9,4 +9,14 @@ dist/
 .env
 .env.*
 !.env.example
-Agents.md
+.agents
+/docs/design/exploration/
+/docs/design/drafts/
+/docs/design/generations/
+/output/
+/.playwright-cli/
+/skills-lock.json
+.playwright-cli/
+ /output/
+skills-lock.json
+.playwright-cli/

@@ -8,6 +8,7 @@ import PrivacyModal from "@/components/PrivacyModal.vue";
 import PreviewCanvas from "@/components/PreviewCanvas.vue";
 import UploadPanel from "@/components/UploadPanel.vue";
 import MessageCenter from "@/components/MessageCenter.vue";
+import SiteHeader from "@/components/SiteHeader.vue";
 import {
   closeDecodedImage,
   createProcessedImageInfo,
@@ -98,7 +99,7 @@ const {
   togglePlayback,
   toggleSwapEyes,
   showAlignPreview,
-  showWigglePreview,
+  resetUpload,
 } = useAppState();
 const { messages, dismiss: dismissMessage, showMessage } = useMessageCenter();
 
@@ -135,6 +136,12 @@ const isMpoInput = computed(() =>
   isMpoFileName(state.selectedFile?.name ?? "", state.selectedFile?.type ?? ""),
 );
 const isEnglish = computed(() => state.locale === "en");
+const showStageInput = computed(
+  () =>
+    state.phase === "empty" ||
+    state.phase === "loading" ||
+    state.phase === "error",
+);
 const nextLayout = computed(() =>
   state.settings.layout === "top-bottom" ? "side-by-side" : "top-bottom",
 );
@@ -314,6 +321,16 @@ function invalidateActiveExportSession() {
 
   session.canceled = true;
   session.cancelTask?.();
+}
+
+function deleteImg() {
+  uploadGeneration += 1;
+  wiggleCreationGeneration += 1;
+  layoutChangeGeneration += 1;
+  isLayoutChanging.value = false;
+  releaseCurrentResources();
+  currentSourceFile = null;
+  resetUpload();
 }
 
 function createInputDetection(
@@ -762,6 +779,7 @@ async function handleExportConfirmed(
       format === "sbs"
         ? exportSbs(
             exportSource,
+            previewSettings,
             onProgress,
             memoryBudget.maxWorkingMemoryBytes,
           )
@@ -872,41 +890,16 @@ onUnmounted(() => {
 
 <template>
   <main class="app-shell">
-    <header class="site-header" :aria-label="isEnglish ? 'Achilles Cat navigation' : 'Achilles Cat 导航'">
-      <span class="site-brand">ACHILLES CAT</span>
-
-      <nav class="site-nav" :aria-label="isEnglish ? 'Sections' : '栏目'">
-        <span class="site-nav-item is-future">{{ isEnglish ? "Works" : "作品" }}</span>
-        <span class="site-nav-item is-future">{{ isEnglish ? "Archive" : "档案" }}</span>
-        <span class="site-nav-item is-future">MiuMiu</span>
-        <span class="site-nav-item is-active" aria-current="page">Lab</span>
-      </nav>
-
-      <div class="site-utilities">
-        <button
-          type="button"
-          class="text-action locale-toggle"
-          :aria-label="isEnglish ? 'Switch language' : '切换语言'"
-          @click="toggleLocale"
-        >
-          {{ isEnglish ? "EN / 中文" : "中文 / EN" }}
-        </button>
-        <span class="site-settings">
-          {{ isEnglish ? "Settings" : "设置" }}
-          <span class="status-dot" aria-hidden="true"></span>
-        </span>
-      </div>
-    </header>
+    <SiteHeader :locale="state.locale" @toggle-locale="toggleLocale" />
 
     <section class="lab-intro" aria-labelledby="lab-title">
       <div class="lab-intro-copy">
-        <p class="eyebrow">{{ isEnglish ? "ACHILLES CAT / 01" : "ACHILLES CAT / 01" }}</p>
         <h1 id="lab-title">3D Photo Lab</h1>
         <p class="subtitle">
           {{
             isEnglish
-              ? "A quiet instrument for turning stereo photographs into depth motion."
-              : "将立体照片转换为深度运动影像的安静工具。"
+              ? "A tool for converting .mpo and SBS images into Wiggle GIFs"
+              : "将 .mpo 和 SBS 图像转换为 Wiggle GIF 的工具"
           }}
         </p>
         <p class="local-processing">
@@ -919,10 +912,17 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <ol class="guide-band" :aria-label="isEnglish ? 'Four-step guide' : '四步指南'">
+      <ol
+        class="guide-band"
+        :aria-label="isEnglish ? 'Four-step guide' : '四步指南'"
+      >
         <li class="guide-band-intro">
           <span class="guide-label">{{ isEnglish ? "GUIDE" : "指南" }}</span>
-          <span>{{ isEnglish ? "Four quiet steps from pair to motion." : "从双图到运动影像的四个步骤。" }}</span>
+          <span>{{
+            isEnglish
+              ? "Four steps from img to motion."
+              : "从图片到运动影像的四个步骤。"
+          }}</span>
         </li>
         <li class="guide-step">
           <span class="guide-step-index">01</span>
@@ -942,7 +942,7 @@ onUnmounted(() => {
           <span class="guide-step-index">03</span>
           <span class="guide-step-copy">
             <strong>{{ isEnglish ? "Preview" : "预览" }}</strong>
-            <span>{{ isEnglish ? "Depth motion" : "深度运动" }}</span>
+            <span>{{ isEnglish ? "Wiggle Gif" : "Wiggle Gif" }}</span>
           </span>
         </li>
         <li class="guide-step">
@@ -955,149 +955,116 @@ onUnmounted(() => {
       </ol>
     </section>
 
-    <section class="lab-workspace" :aria-label="isEnglish ? '3D Photo Lab workspace' : '3D Photo Lab 工作区'">
-      <aside class="utility-rail" :aria-label="isEnglish ? 'Utility rail' : '工具轨'">
-        <div class="rail-heading">
-          <span class="panel-kicker">{{ isEnglish ? "UTILITY RAIL" : "工具轨" }}</span>
-          <strong>{{ isEnglish ? "Input" : "输入" }}</strong>
-          <span>{{ isEnglish ? "A stereo source for the Lab." : "为 Lab 准备立体素材。" }}</span>
-        </div>
-
-        <UploadPanel
-          :disabled="state.phase === 'loading' || state.phase === 'exporting'"
-          :is-loading="state.phase === 'loading'"
-          :locale="state.locale"
-          @file-accepted="handleFileAccepted"
-          @file-rejected="setUploadRejectedError"
-        />
-
-        <div class="rail-note">
-          <span class="rail-note-label">{{ isEnglish ? "ACCEPTS" : "支持格式" }}</span>
-          <span class="rail-note-value">MPO / JPG / PNG</span>
-          <span>{{ isEnglish ? "Processed locally" : "本地处理" }}</span>
-        </div>
-      </aside>
-
+    <section
+      class="lab-workspace"
+      :aria-label="isEnglish ? '3D Photo Lab workspace' : '3D Photo Lab 工作区'"
+    >
       <div class="workbench-zone">
         <section
           class="preview-workspace"
           :aria-label="isEnglish ? 'Preview stage' : '预览舞台'"
         >
-          <header class="section-header">
-            <div class="section-title">
-              <span class="panel-kicker">{{ isEnglish ? "VIEW" : "视图" }}</span>
-              <h2>
+          <div class="preview-stage-shell">
+            <div class="stage-caption">
+              <span class="stage-caption-label">
                 {{
                   state.previewMode === "wiggle"
                     ? isEnglish
-                      ? "Wiggle Preview"
-                      : "Wiggle 预览"
+                      ? "WIGGLE STAGE"
+                      : "Wiggle 舞台"
                     : isEnglish
-                      ? "Alignment Preview"
-                      : "对齐预览"
+                      ? "ALIGNMENT STAGE"
+                      : "对齐舞台"
                 }}
-              </h2>
+              </span>
+              <span class="stage-caption-note">
+                {{
+                  state.previewMode === "wiggle"
+                    ? isEnglish
+                      ? "Preview depth motion"
+                      : "预览深度运动"
+                    : isEnglish
+                      ? "Calibrate the pair"
+                      : "校准左右眼画面"
+                }}
+              </span>
             </div>
 
-            <div
-              class="mode-switch"
-              role="tablist"
-              :aria-label="isEnglish ? 'Preview mode' : '预览模式'"
-            >
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="state.previewMode === 'align'"
-                :class="{ active: state.previewMode === 'align' }"
-                :disabled="state.phase !== 'preview'"
-                @click="showAlignPreview"
-              >
-                {{ isEnglish ? "Alignment Preview" : "对齐预览" }}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="state.previewMode === 'wiggle'"
-                :class="{ active: state.previewMode === 'wiggle' }"
-                :disabled="state.phase !== 'preview'"
-                @click="showWigglePreview"
-              >
-                {{ isEnglish ? "Wiggle Preview" : "Wiggle 预览" }}
-              </button>
-            </div>
-          </header>
-
-          <PreviewCanvas
-            v-if="state.previewMode === 'wiggle'"
-            :phase="state.phase"
-            :selected-file="state.selectedFile"
-            :processed-image="state.processedImage"
-            :stereo-split="state.stereoSplit"
-            :settings="state.settings"
-            :locale="state.locale"
-          />
-
-          <div v-else class="alignment-preview-wrap">
-            <AlignmentPreviewPanel
+            <PreviewCanvas
+              v-if="state.previewMode === 'wiggle'"
               :phase="state.phase"
+              :selected-file="state.selectedFile"
+              :processed-image="state.processedImage"
               :stereo-split="state.stereoSplit"
               :settings="state.settings"
               :locale="state.locale"
             />
-            <button
-              class="layout-toggle"
-              type="button"
-              :disabled="
-                !state.processedImage ||
-                state.phase !== 'preview' ||
-                isLayoutChanging
-              "
-              :title="
-                state.processedImage
-                  ? layoutToggleLabel
-                  : isEnglish
-                    ? 'Only for JPG/PNG combined images'
-                    : '仅适用于 JPG/PNG 拼接图'
-              "
-              :aria-label="
-                state.processedImage
-                  ? layoutToggleLabel
-                  : isEnglish
-                    ? 'Image layout is available for JPG/PNG only'
-                    : '图片布局仅适用于 JPG/PNG'
-              "
-              @click="toggleLayout"
-            >
-              <svg
-                v-if="nextLayout === 'top-bottom'"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
+
+            <div v-else class="alignment-preview-wrap">
+              <AlignmentPreviewPanel
+                :phase="state.phase"
+                :stereo-split="state.stereoSplit"
+                :settings="state.settings"
+                :locale="state.locale"
               >
-                <path d="M4 8h16M4 16h16M8 4l-4 4 4 4M16 12l4 4-4 4" />
-              </svg>
-              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M8 4v16M16 4v16M4 8l4-4 4 4M12 16l4 4 4-4" />
-              </svg>
-            </button>
+                <template #stage-input>
+                  <div v-if="showStageInput" class="stage-input-entry">
+                    <UploadPanel
+                      :disabled="
+                        state.phase === 'loading' || state.phase === 'exporting'
+                      "
+                      :is-loading="state.phase === 'loading'"
+                      :locale="state.locale"
+                      :selected-file="state.selectedFile"
+                      @file-accepted="handleFileAccepted"
+                      @file-rejected="setUploadRejectedError"
+                    />
+                  </div>
+                </template>
+              </AlignmentPreviewPanel>
+              <button
+                class="layout-toggle"
+                type="button"
+                :disabled="
+                  !state.processedImage ||
+                  state.phase !== 'preview' ||
+                  isLayoutChanging
+                "
+                :title="
+                  state.processedImage
+                    ? layoutToggleLabel
+                    : isEnglish
+                      ? 'Only for JPG/PNG combined images'
+                      : '仅适用于 JPG/PNG 拼接图'
+                "
+                :aria-label="
+                  state.processedImage
+                    ? layoutToggleLabel
+                    : isEnglish
+                      ? 'Image layout is available for JPG/PNG only'
+                      : '图片布局仅适用于 JPG/PNG'
+                "
+                @click="toggleLayout"
+              >
+                <svg
+                  v-if="nextLayout === 'top-bottom'"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M4 8h16M4 16h16M8 4l-4 4 4 4M16 12l4 4-4 4" />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 4v16M16 4v16M4 8l4-4 4 4M12 16l4 4 4-4" />
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
 
-        <section class="controls-zone" :aria-label="isEnglish ? 'Controls' : '控制'">
-          <header class="controls-zone-header">
-            <span class="panel-kicker">{{ isEnglish ? "CONTROLS" : "控制" }}</span>
-            <span class="controls-zone-mode">
-              {{
-                state.previewMode === "wiggle"
-                  ? isEnglish
-                    ? "Motion"
-                    : "运动"
-                  : isEnglish
-                    ? "Alignment"
-                    : "对齐"
-              }}
-            </span>
-          </header>
-
+        <section
+          class="controls-zone"
+          :aria-label="isEnglish ? 'Controls' : '控制'"
+        >
           <ControlPanel
             :settings="state.settings"
             :is-wiggle-mode="state.previewMode === 'wiggle'"
@@ -1114,6 +1081,7 @@ onUnmounted(() => {
             @intermediate-frame-toggled="toggleIntermediateFrames"
             @align-preview-requested="showAlignPreview"
             @export-dialog-requested="isExportDialogOpen = true"
+            @clear-img-requested="deleteImg"
           />
         </section>
 

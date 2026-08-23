@@ -360,15 +360,6 @@ export function useAppState() {
     state.settings.isPlaying = false;
   }
 
-  function showWigglePreview() {
-    if (state.phase !== 'preview' || !state.stereoSplit) {
-      return;
-    }
-
-    state.previewMode = 'wiggle';
-    state.settings.isPlaying = !prefersReducedMotion();
-  }
-
   function toggleSwapEyes() {
     state.settings.swapEyes = !state.settings.swapEyes;
   }
@@ -401,6 +392,5 @@ export function useAppState() {
     toggleSwapEyes,
     showSplitPreview,
     showAlignPreview,
-    showWigglePreview,
   };
 }

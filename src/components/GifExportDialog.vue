@@ -105,12 +105,8 @@ const sbsDescription = computed(() => {
         aria-modal="true"
         aria-labelledby="export-title"
       >
-        <header class="dialog-header">
-          <div>
-            <p class="panel-kicker">{{ copy.kicker }}</p>
-            <h2 id="export-title">{{ copy.title }}</h2>
-          </div>
-          <span class="dialog-index" aria-hidden="true">EXPORT / 01</span>
+        <header class="dialog-header export-dialog-header">
+          <p class="panel-kicker">{{ copy.kicker }}</p>
         </header>
 
         <fieldset v-if="isMpo" class="export-format-options" :disabled="isExporting">
@@ -124,6 +120,8 @@ const sbsDescription = computed(() => {
             <span><strong>SBS PNG</strong><small>{{ sbsDescription }}</small></span>
           </label>
         </fieldset>
+
+        <!-- <p v-if="selectedFormat === 'gif'" class="dialog-section-label">{{ isEn ? 'Options' : '选项' }}</p> -->
 
         <p v-if="memoryGuidance" class="memory-guidance" aria-live="polite">{{ memoryGuidance }}</p>
 

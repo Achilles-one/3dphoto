@@ -8,6 +8,7 @@ import { getAlignmentLimit, getScaledAlignmentOffset } from '../src/core/alignme
 import {
   drawWiggleFrame,
   getFrameGeometry,
+  getOrderedViews,
 } from '../src/core/renderGeometry.ts';
 import {
   createWiggleFrameSequence,
@@ -287,6 +288,21 @@ test('SBS export has an independent source, output and encoder budget', () => {
   assert.deepEqual(
     createSbsExportMemoryPlan(stereoSplit, STANDARD_MEMORY_BUDGET).dimensions,
     { width: 8000, height: 3000 },
+  );
+});
+
+test('SBS output view order follows Swap Eyes', () => {
+  const leftView = { width: 3584, height: 2016 } as never;
+  const rightView = { width: 3584, height: 2016 } as never;
+  const stereoSplit = { leftView, rightView } as never;
+
+  assert.deepEqual(
+    getOrderedViews(stereoSplit, { swapEyes: false } as never),
+    [leftView, rightView],
+  );
+  assert.deepEqual(
+    getOrderedViews(stereoSplit, { swapEyes: true } as never),
+    [rightView, leftView],
   );
 });
 

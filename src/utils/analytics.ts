@@ -18,10 +18,10 @@ function canUseStorage() {
 
 export function isAnalyticsEnabled(): boolean {
   if (!canUseStorage()) {
-    return true;
+    return false;
   }
 
-  return window.localStorage.getItem(ANALYTICS_STORAGE_KEY) !== 'false';
+  return window.localStorage.getItem(ANALYTICS_STORAGE_KEY) === 'true';
 }
 
 export function setAnalyticsEnabled(enabled: boolean) {

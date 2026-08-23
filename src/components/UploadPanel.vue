@@ -7,6 +7,7 @@ const props = defineProps<{
   disabled?: boolean;
   isLoading?: boolean;
   locale: 'zh-CN' | 'en';
+  selectedFile?: { name: string } | null;
 }>();
 
 const emit = defineEmits<{
@@ -72,6 +73,7 @@ function handleDrop(event: DragEvent) {
       @drop.prevent="handleDrop"
     >
       <span class="drop-zone-title">{{ props.locale === 'en' ? 'Upload a 3D photo' : '上传 3D 照片' }}</span>
+      <span v-if="props.isLoading && props.selectedFile" class="drop-zone-file">{{ props.selectedFile.name }}</span>
       <span class="drop-zone-hint">
         {{ props.locale === 'en' ? 'Supports JPG, PNG, and MPO. Images stay in your browser.' : '支持 JPG、PNG 和 MPO；图片仅在您的浏览器中本地处理。' }}
       </span>

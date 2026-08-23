@@ -17,7 +17,7 @@ export interface FrameGeometry {
   second: DrawRect;
 }
 
-export const MATTE_BACKGROUND = '#eef3f0';
+export const MATTE_BACKGROUND = '#161d1c';
 
 export function getOrderedViews(
   stereoSplit: StereoSplitResult,
