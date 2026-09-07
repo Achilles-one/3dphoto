@@ -8,8 +8,10 @@ export type PreviewMode = 'split' | 'align' | 'wiggle';
 export type StereoLayout = 'auto' | 'side-by-side' | 'top-bottom';
 
 export type ExportSize = 'small' | 'medium' | 'large';
+export type Mp4ExportSize = '1080' | '1440';
+export type ExportSelectionSize = ExportSize | Mp4ExportSize;
 
-export type ExportFormat = 'gif' | 'sbs';
+export type ExportFormat = 'gif' | 'mp4' | 'sbs';
 export type ExportFraming = 'crop-overlap' | 'full-frame';
 
 export type InputFormat = 'jpeg' | 'png' | 'mpo';

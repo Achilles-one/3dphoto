@@ -41,11 +41,10 @@ export interface GifExportTask {
 function drawFrame(
   stereoSplit: StereoSplitResult,
   settings: WiggleSettings,
-  exportSize: ExportSize,
+  dimensions: { width: number; height: number },
   frame: ReturnType<typeof createWiggleFrameSequence>[number],
 ): ImageData {
   const views = getOrderedViews(stereoSplit, settings);
-  const dimensions = getExportDimensions(views[0], exportSize);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
 
@@ -80,6 +79,21 @@ export function createGifFrames(
   exportSize: ExportSize,
   onProgress?: (progress: GifExportProgress) => void,
 ): GifFramePayload[] {
+  const [firstView] = getOrderedViews(stereoSplit, settings);
+  return createAnimationFrames(
+    stereoSplit,
+    settings,
+    getExportDimensions(firstView, exportSize),
+    onProgress,
+  );
+}
+
+export function createAnimationFrames(
+  stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
+  dimensions: { width: number; height: number },
+  onProgress?: (progress: GifExportProgress) => void,
+): GifFramePayload[] {
   const sequence = createWiggleFrameSequence(settings.intermediateFrames !== false);
   const delay = getFrameInterval(settings.speed);
 
@@ -88,7 +102,7 @@ export function createGifFrames(
     const imageData = drawFrame(
       stereoSplit,
       settings,
-      exportSize,
+      dimensions,
       frame,
     );
     onProgress?.({

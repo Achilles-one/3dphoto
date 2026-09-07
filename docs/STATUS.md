@@ -1,6 +1,6 @@
 # 项目状态
 
-更新时间：2026-08-23
+更新时间：2026-09-07
 
 ## Now
 
@@ -14,7 +14,10 @@
 ## Done
 
 - JPG、PNG 的 SBS/Top-Bottom 处理和 MPO 处理流程已接入现有 UI。
-- 对齐、Wiggle、GIF 导出、MPO SBS PNG 导出和导出取消已有实现。
+- 对齐、Wiggle、GIF 导出、H.264 MP4 导出、MPO SBS PNG 导出和导出取消已有实现。
+- MP4 导出支持 1080/1440 最长边、不放大原图、偶数尺寸、25 fps VBR 编码，并按用户速度重复帧和分配累计误差。
+- MP4 通过 WebCodecs 与 Mediabunny 在独立 Worker 中本地编码封装，不支持的尺寸档位会在下载弹框中禁用。
+- MP4 发布门禁采用 Windows Edge 真实编码、Mediabunny 成品解析和 CI 专用 `ffprobe` 校验，并覆盖 1080/1440、能力降级、取消和迟到结果。
 - 分析默认关闭，只有明确开启匿名产品事件后才允许发送。
 - SBS PNG 输出顺序遵循当前 `Swap Eyes` 设置。
 - `SiteHeader`、舞台内上传、静态指南和隐私设置已纳入当前页面。
@@ -28,9 +31,10 @@
 
 ## Known limitations
 
-- 不支持普通单张 2D 照片、HEIC、WebP、视频、两张独立图片和批量处理。
+- 不支持普通单张 2D 照片、HEIC、WebP、视频输入、两张独立图片和批量处理。
 - 自动布局判断可能需要用户切换布局；对齐不处理透视、旋转、镜头畸变或严重场景运动。
 - MPO 兼容性、移动 Safari 下载和低内存阈值仍需真实设备确认。
+- MP4 导出依赖浏览器的 WebCodecs H.264 编码能力，不支持时会在导出面板中禁用。
 
 ## Verification
 

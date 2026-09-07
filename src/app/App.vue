@@ -22,13 +22,17 @@ import {
 } from "@/core/exportEngine";
 import {
   createFramedGifExportSource,
+  createFramedMp4ExportSource,
   getExportSettings,
   getStereoViewDimensions,
 } from "@/core/exportSource";
 import {
   createFramedGifSource,
+  createFramedMp4Source,
   getFramedGifOutputDimensions,
+  getFramedMp4OutputDimensions,
 } from "@/core/exportFraming";
+import { canEncodeMp4, exportMp4 } from "@/core/mp4Encoding";
 import { SbsDimensionsMismatchError, exportSbs } from "@/core/sbsExport";
 import { getAlignmentLimit } from "@/core/alignment";
 import {
@@ -44,6 +48,7 @@ import {
 import {
   createFileReadMemoryPlan,
   createGifExportMemoryPlans,
+  createMp4ExportMemoryPlans,
   createMpoDecodeMemoryPlan,
   createRasterDecodeMemoryPlan,
   createSbsExportMemoryPlan,
@@ -56,13 +61,16 @@ import type {
   AppErrorCode,
   ExportFormat,
   ExportFraming,
+  ExportSelectionSize,
   ExportSize,
   InputDetection,
   InputFormat,
+  Mp4ExportSize,
 } from "@/types/app";
 import type { StereoSplitResult } from "@/types/stereo";
 import {
   createGifFileName,
+  createMp4FileName,
   createSbsFileName,
   downloadBlob,
 } from "@/utils/download";
@@ -180,7 +188,7 @@ const feedbackInputFormat = computed<InputFormat | "not-loaded" | "unknown">(
 );
 const lastExportAttempt = ref<{
   format: ExportFormat;
-  size: ExportSize;
+  size: ExportSelectionSize;
   framing: ExportFraming | "not-applicable";
 } | null>(null);
 const feedbackHref = computed(() =>
@@ -302,6 +310,110 @@ const cropOverlapGifMemoryPlans = computed(() =>
   getGifMemoryPlans("crop-overlap"),
 );
 const fullFrameGifMemoryPlans = computed(() => getGifMemoryPlans("full-frame"));
+type Mp4SupportMap = Record<ExportFraming, Record<Mp4ExportSize, boolean | null>>;
+const emptyMp4Support = (): Mp4SupportMap => ({
+  "crop-overlap": { "1080": null, "1440": null },
+  "full-frame": { "1080": null, "1440": null },
+});
+const mp4Support = ref<Mp4SupportMap>(emptyMp4Support());
+let mp4SupportGeneration = 0;
+
+function getMp4MemoryPlans(framing: ExportFraming) {
+  if (
+    !state.stereoSplit ||
+    !gifSourceDimensions.value ||
+    !gifFramingSource.value
+  ) {
+    return null;
+  }
+
+  const splitPixels =
+    state.stereoSplit.leftView.width * state.stereoSplit.leftView.height +
+    state.stereoSplit.rightView.width * state.stereoSplit.rightView.height;
+  const previewPixels = state.processedImage
+    ? state.processedImage.previewCanvas.width * state.processedImage.previewCanvas.height
+    : 0;
+  const decodePixels = state.processedImage
+    ? state.processedImage.originalWidth * state.processedImage.originalHeight
+    : 0;
+
+  return createMp4ExportMemoryPlans(
+    {
+      viewWidth: gifSourceDimensions.value.width,
+      viewHeight: gifSourceDimensions.value.height,
+      residentPixels: splitPixels + previewPixels,
+      decodePixels,
+    },
+    memoryBudget,
+    state.settings.intermediateFrames !== false ? 4 : 2,
+    state.settings.speed,
+    {
+      "1080": getFramedMp4OutputDimensions(
+        gifFramingSource.value.stereoSplit,
+        gifFramingSource.value.settings,
+        "1080",
+        framing,
+      ),
+      "1440": getFramedMp4OutputDimensions(
+        gifFramingSource.value.stereoSplit,
+        gifFramingSource.value.settings,
+        "1440",
+        framing,
+      ),
+    },
+  );
+}
+
+function getMp4Plans(framing: ExportFraming) {
+  const memoryPlans = getMp4MemoryPlans(framing);
+  if (!memoryPlans) return null;
+  return {
+    "1080": {
+      ...memoryPlans["1080"],
+      codecSupported: mp4Support.value[framing]["1080"],
+    },
+    "1440": {
+      ...memoryPlans["1440"],
+      codecSupported: mp4Support.value[framing]["1440"],
+    },
+  };
+}
+
+const cropOverlapMp4Plans = computed(() => getMp4Plans("crop-overlap"));
+const fullFrameMp4Plans = computed(() => getMp4Plans("full-frame"));
+
+async function refreshMp4Support() {
+  const generation = ++mp4SupportGeneration;
+  mp4Support.value = emptyMp4Support();
+  const framings: ExportFraming[] = ["crop-overlap", "full-frame"];
+  const sizes: Mp4ExportSize[] = ["1080", "1440"];
+  const results = await Promise.all(framings.flatMap((framing) => {
+    const plans = getMp4MemoryPlans(framing);
+    return sizes.map(async (size) => {
+      const plan = plans?.[size];
+      const supported = Boolean(
+        plan && plan.allowed && await canEncodeMp4(
+          plan.dimensions.width,
+          plan.dimensions.height,
+          size,
+        ),
+      );
+      return { framing, size, supported };
+    });
+  }));
+
+  if (generation !== mp4SupportGeneration || !isExportDialogOpen.value) return;
+  const next = emptyMp4Support();
+  for (const result of results) {
+    next[result.framing][result.size] = result.supported;
+  }
+  mp4Support.value = next;
+}
+
+function openExportDialog() {
+  isExportDialogOpen.value = true;
+  void refreshMp4Support();
+}
 const sbsMemoryPlan = computed(() =>
   state.stereoSplit
     ? createSbsExportMemoryPlan(state.stereoSplit, memoryBudget)
@@ -328,6 +440,7 @@ function deleteImg() {
   wiggleCreationGeneration += 1;
   layoutChangeGeneration += 1;
   isLayoutChanging.value = false;
+  mp4SupportGeneration += 1;
   releaseCurrentResources();
   currentSourceFile = null;
   resetUpload();
@@ -676,7 +789,7 @@ async function handleFileAccepted(file: File) {
 
 async function handleExportConfirmed(
   format: ExportFormat,
-  exportSize: ExportSize,
+  exportSize: ExportSelectionSize,
   framing: ExportFraming,
 ) {
   if (
@@ -687,10 +800,27 @@ async function handleExportConfirmed(
     return;
   }
 
-  if (format === "gif" && !getGifMemoryPlans(framing)?.[exportSize].allowed) {
+  const isGifSize = exportSize === "small" || exportSize === "medium" || exportSize === "large";
+  const isMp4Size = exportSize === "1080" || exportSize === "1440";
+
+  if (format === "gif" && (!isGifSize || !getGifMemoryPlans(framing)?.[exportSize].allowed)) {
     setRecoverableError("image-too-large");
     isExportDialogOpen.value = false;
     return;
+  }
+
+  if (format === "mp4") {
+    const plan = isMp4Size ? getMp4Plans(framing)?.[exportSize] : null;
+    if (!plan?.allowed) {
+      setRecoverableError("image-too-large");
+      isExportDialogOpen.value = false;
+      return;
+    }
+    if (plan.codecSupported !== true) {
+      setRecoverableError("browser-unsupported");
+      isExportDialogOpen.value = false;
+      return;
+    }
   }
 
   if (format === "sbs" && !sbsMemoryPlan.value?.allowed) {
@@ -706,7 +836,7 @@ async function handleExportConfirmed(
   lastExportAttempt.value = {
     format,
     size: exportSize,
-    framing: format === "gif" ? framing : "not-applicable",
+    framing: format === "gif" || format === "mp4" ? framing : "not-applicable",
   };
   const previewSource = state.stereoSplit;
   storeExportPreference({ format, size: exportSize });
@@ -738,7 +868,10 @@ async function handleExportConfirmed(
       alignmentY: 0,
     };
 
-    if (format === "gif") {
+    if (format === "gif" || format === "mp4") {
+      const animatedSize = format === "gif"
+        ? exportSize as ExportSize
+        : exportSize as Mp4ExportSize;
       if (shouldUseOriginalImage) {
         if (!sourceFile) {
           throw new Error("The original image source is unavailable.");
@@ -750,24 +883,40 @@ async function handleExportConfirmed(
             throw new ExportCanceledError();
           }
 
-          temporaryExportSource = createFramedGifExportSource(
-            decodedImage,
-            previewSource.layout,
-            previewSource,
-            previewSettings,
-            exportSize,
-            framing,
-          );
+          temporaryExportSource = format === "gif"
+            ? createFramedGifExportSource(
+                decodedImage,
+                previewSource.layout,
+                previewSource,
+                previewSettings,
+                animatedSize as ExportSize,
+                framing,
+              )
+            : createFramedMp4ExportSource(
+                decodedImage,
+                previewSource.layout,
+                previewSource,
+                previewSettings,
+                animatedSize as Mp4ExportSize,
+                framing,
+              );
         } finally {
           closeDecodedImage(decodedImage);
         }
       } else {
-        temporaryExportSource = createFramedGifSource(
-          previewSource,
-          previewSettings,
-          exportSize,
-          framing,
-        );
+        temporaryExportSource = format === "gif"
+          ? createFramedGifSource(
+              previewSource,
+              previewSettings,
+              animatedSize as ExportSize,
+              framing,
+            )
+          : createFramedMp4Source(
+              previewSource,
+              previewSettings,
+              animatedSize as Mp4ExportSize,
+              framing,
+            );
       }
 
       exportSource = temporaryExportSource;
@@ -775,18 +924,24 @@ async function handleExportConfirmed(
       exportSource = previewSource;
     }
 
-    const exportTask =
-      format === "sbs"
-        ? exportSbs(
+    const exportTask = format === "sbs"
+      ? exportSbs(
             exportSource,
             previewSettings,
             onProgress,
             memoryBudget.maxWorkingMemoryBytes,
           )
+      : format === "mp4"
+        ? exportMp4(
+            exportSource,
+            exportSettings,
+            exportSize as Mp4ExportSize,
+            onProgress,
+          )
         : exportGif(
             exportSource,
             exportSettings,
-            exportSize,
+            exportSize as ExportSize,
             onProgress,
             memoryBudget.maxWorkingMemoryBytes,
           );
@@ -801,12 +956,19 @@ async function handleExportConfirmed(
       exportBlob,
       format === "sbs"
         ? createSbsFileName(selectedFileName)
-        : createGifFileName(selectedFileName),
+        : format === "mp4"
+          ? createMp4FileName(selectedFileName)
+          : createGifFileName(selectedFileName),
     );
     showMessage("success", isEnglish.value ? "Downloaded" : "已下载");
     if (format === "gif") {
-      state.settings.exportSize = exportSize;
+      state.settings.exportSize = exportSize as ExportSize;
       trackEvent("gif_export_success", {
+        size: exportSize,
+        durationMs: Math.round(performance.now() - exportStartedAt),
+      });
+    } else if (format === "mp4") {
+      trackEvent("mp4_export_success", {
         size: exportSize,
         durationMs: Math.round(performance.now() - exportStartedAt),
       });
@@ -829,10 +991,17 @@ async function handleExportConfirmed(
       return;
     }
 
-    trackEvent(format === "gif" ? "gif_export_failure" : "sbs_export_failure", {
+    trackEvent(
+      format === "gif"
+        ? "gif_export_failure"
+        : format === "mp4"
+          ? "mp4_export_failure"
+          : "sbs_export_failure",
+      {
       reason: error instanceof Error ? error.name : "unknown",
       durationMs: Math.round(performance.now() - exportStartedAt),
-    });
+      },
+    );
 
     if (error instanceof SbsDimensionsMismatchError) {
       setRecoverableError("sbs-dimensions-mismatch");
@@ -853,6 +1022,7 @@ async function handleExportConfirmed(
 }
 
 function handleExportCanceled() {
+  mp4SupportGeneration += 1;
   const session = activeExportSession;
   if (session) {
     invalidateActiveExportSession();
@@ -898,8 +1068,8 @@ onUnmounted(() => {
         <p class="subtitle">
           {{
             isEnglish
-              ? "A tool for converting .mpo and SBS images into Wiggle GIFs"
-              : "将 .mpo 和 SBS 图像转换为 Wiggle GIF 的工具"
+              ? "A tool for converting .mpo and SBS images into Wiggle GIFs or MP4 videos"
+              : "将 .mpo 和 SBS 图像转换为 Wiggle GIF 或 MP4 视频的工具"
           }}
         </p>
         <p class="local-processing">
@@ -942,7 +1112,7 @@ onUnmounted(() => {
           <span class="guide-step-index">03</span>
           <span class="guide-step-copy">
             <strong>{{ isEnglish ? "Preview" : "预览" }}</strong>
-            <span>{{ isEnglish ? "Wiggle Gif" : "Wiggle Gif" }}</span>
+            <span>{{ isEnglish ? "Wiggle motion" : "Wiggle 动效" }}</span>
           </span>
         </li>
         <li class="guide-step">
@@ -1080,7 +1250,7 @@ onUnmounted(() => {
             @speed-changed="setSpeed"
             @intermediate-frame-toggled="toggleIntermediateFrames"
             @align-preview-requested="showAlignPreview"
-            @export-dialog-requested="isExportDialogOpen = true"
+            @export-dialog-requested="openExportDialog"
             @clear-img-requested="deleteImg"
           />
         </section>
@@ -1113,6 +1283,8 @@ onUnmounted(() => {
       :gif-source-dimensions="gifSourceDimensions"
       :crop-overlap-gif-memory-plans="cropOverlapGifMemoryPlans"
       :full-frame-gif-memory-plans="fullFrameGifMemoryPlans"
+      :crop-overlap-mp4-plans="cropOverlapMp4Plans"
+      :full-frame-mp4-plans="fullFrameMp4Plans"
       :sbs-memory-plan="sbsMemoryPlan"
       :memory-profile="memoryBudget.kind"
       :progress="exportProgress"

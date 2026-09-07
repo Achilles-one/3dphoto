@@ -5,6 +5,7 @@
 ## 检查
 
 - [ ] CI / release-check 通过
+- [ ] CI / mp4-browser-gate 通过
 - [ ] Vercel Preview 构建成功
 - [ ] 已打开 Preview 检查本次改动
 - [ ] 涉及 UI：检查 PC 和移动端

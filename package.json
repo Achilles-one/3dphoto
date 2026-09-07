@@ -11,15 +11,20 @@
     "preview": "vite preview",
     "preview:production": "vite preview --host 127.0.0.1 --port 4173",
     "test": "node --test --experimental-transform-types \"tests/**/*.test.ts\"",
+    "test:mp4": "npm run build && node scripts/run-mp4-tests.mjs",
+    "test:mp4:built": "node scripts/run-mp4-tests.mjs",
     "verify:build": "node scripts/verify-build.mjs",
-    "release:check": "npm test && npm run build && npm run verify:build",
+    "check:core": "npm test && npm run build && npm run verify:build",
+    "release:check": "npm run check:core && npm run test:mp4:built",
     "smoke:deployment": "node scripts/smoke-deployment.mjs"
   },
   "dependencies": {
     "gifenc": "^1.0.3",
+    "mediabunny": "^1.55.5",
     "vue": "^3.5.18"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.2.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.8.0",

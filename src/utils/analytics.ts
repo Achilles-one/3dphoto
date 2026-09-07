@@ -5,6 +5,8 @@ export type AnalyticsEventName =
   | 'wiggle_play'
   | 'gif_export_success'
   | 'gif_export_failure'
+  | 'mp4_export_success'
+  | 'mp4_export_failure'
   | 'sbs_export_success'
   | 'sbs_export_failure';
 

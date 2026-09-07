@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release-check:
+  core-check:
     name: release-check
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -29,4 +29,36 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Test, build, and verify artifacts
-        run: npm run release:check
+        run: npm run check:core
+
+  mp4-browser-gate:
+    name: mp4-browser-gate
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_CHANNEL: msedge
+      REQUIRE_FFPROBE: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install ffprobe
+        run: choco install ffmpeg --no-progress -y
+      - name: Build production assets
+        run: npm run build
+      - name: Run the real-browser MP4 gate
+        run: npm run test:mp4:built
+      - name: Upload synthetic diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mp4-browser-diagnostics
+          path: output/playwright/
+          if-no-files-found: ignore
+          retention-days: 7

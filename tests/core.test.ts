@@ -16,7 +16,13 @@ import {
 } from '../src/core/frameSequence.ts';
 import {
   getExportDimensions,
+  getMp4ExportDimensions,
 } from '../src/core/sizePolicy.ts';
+import {
+  calculateMp4Bitrate,
+  createMp4Timeline,
+  MP4_FRAME_RATE,
+} from '../src/core/mp4Policy.ts';
 import {
   CONSERVATIVE_MEMORY_BUDGET,
   createFileReadMemoryPlan,
@@ -253,7 +259,7 @@ test('touch devices without a low-memory signal accept the required source basel
 test('GIF plans recommend the largest executable downgrade', () => {
   const testProfile: MemoryBudgetProfile = {
     kind: 'standard',
-    maxWorkingMemoryBytes: 55 * 1024 * 1024,
+    maxWorkingMemoryBytes: 90 * 1024 * 1024,
     maxFileBytes: 64 * 1024 * 1024,
     maxDecodedPixels: 32_000_000,
     maxMpoFileBytes: 32 * 1024 * 1024,
@@ -323,17 +329,58 @@ test('a standard FUJIFILM MPO can export its original-size SBS PNG', () => {
 
 test('GIF presets constrain the longest edge and never upscale the source', () => {
   assert.deepEqual(getExportDimensions({ width: 3000, height: 1000 }, 'medium'), {
-    width: 720,
-    height: 240,
+    width: 1024,
+    height: 341,
   });
   assert.deepEqual(getExportDimensions({ width: 1000, height: 3000 }, 'medium'), {
-    width: 240,
-    height: 720,
+    width: 341,
+    height: 1024,
   });
   assert.deepEqual(getExportDimensions({ width: 320, height: 200 }, 'large'), {
     width: 320,
     height: 200,
   });
+});
+
+test('MP4 presets constrain the longest edge, keep even dimensions and never upscale', () => {
+  assert.deepEqual(getMp4ExportDimensions({ width: 3000, height: 1000 }, '1080'), {
+    width: 1080,
+    height: 360,
+  });
+  assert.deepEqual(getMp4ExportDimensions({ width: 1000, height: 3000 }, '1440'), {
+    width: 480,
+    height: 1440,
+  });
+  assert.deepEqual(getMp4ExportDimensions({ width: 101, height: 99 }, '1440'), {
+    width: 100,
+    height: 98,
+  });
+});
+
+test('MP4 bitrate follows the pixel formula and preset floors', () => {
+  assert.equal(MP4_FRAME_RATE, 25);
+  assert.equal(calculateMp4Bitrate(1080, 608, '1080'), 9_849_600);
+  assert.equal(calculateMp4Bitrate(1440, 810, '1440'), 17_496_000);
+  assert.equal(calculateMp4Bitrate(320, 200, '1080'), 8_000_000);
+  assert.equal(calculateMp4Bitrate(320, 200, '1440'), 16_000_000);
+});
+
+test('MP4 timeline repeats complete loops and distributes 100ms frames at 25fps', () => {
+  const fast = createMp4Timeline([{ delay: 100 }, { delay: 100 }]);
+  assert.equal(fast.loopCount, 10);
+  assert.equal(fast.logicalDurationMs, 2000);
+  assert.equal(fast.encodedDurationMs, 2000);
+  assert.deepEqual(fast.sourceFrameIndices.slice(0, 5), [0, 0, 0, 1, 1]);
+
+  const defaultFourFrame = createMp4Timeline(Array.from({ length: 4 }, () => ({ delay: 200 })));
+  assert.equal(defaultFourFrame.loopCount, 3);
+  assert.equal(defaultFourFrame.logicalDurationMs, 2400);
+  assert.equal(defaultFourFrame.sourceFrameIndices.length, 60);
+
+  const slow = createMp4Timeline(Array.from({ length: 4 }, () => ({ delay: 2000 })));
+  assert.equal(slow.loopCount, 1);
+  assert.equal(slow.logicalDurationMs, 8000);
+  assert.equal(slow.sourceFrameIndices.length, 200);
 });
 
 test('full-resolution stereo dimensions are derived before preview downsampling', () => {
@@ -400,8 +447,8 @@ test('crop-overlap framing crops both alignment axes before GIF sizing', () => {
     'full-frame',
   );
 
-  assert.deepEqual(cropPlan.dimensions, { width: 720, height: 630 });
-  assert.deepEqual(fullPlan.dimensions, { width: 720, height: 576 });
+  assert.deepEqual(cropPlan.dimensions, { width: 800, height: 700 });
+  assert.deepEqual(fullPlan.dimensions, { width: 1000, height: 800 });
   assert.ok(cropPlan.first.x < 0);
   assert.ok(cropPlan.second.x === 0);
   assert.ok(cropPlan.first.y === 0);

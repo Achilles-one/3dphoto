@@ -1,7 +1,12 @@
-import type { ExportFraming, ExportSize, WiggleSettings } from '@/types/app';
+import type {
+  ExportFraming,
+  ExportSize,
+  Mp4ExportSize,
+  WiggleSettings,
+} from '@/types/app';
 import type { StereoSplitResult, StereoView } from '@/types/stereo';
 
-import { getExportDimensions } from './sizePolicy.ts';
+import { getExportDimensions, getMp4ExportDimensions } from './sizePolicy.ts';
 import { getFrameGeometry, getOrderedViews, type DrawRect } from './renderGeometry.ts';
 
 export interface GifExportRenderPlan {
@@ -50,11 +55,11 @@ function scaleRect(rect: DrawRect, frame: SourceFrame, scaleX: number, scaleY: n
  * Produces one stable rendering plan for every A/B/M frame. The overlap frame
  * is rounded inward so neither eye can expose a one-pixel matte sliver.
  */
-export function getGifExportRenderPlan(
+function getAnimatedExportRenderPlan(
   stereoSplit: StereoSplitResult,
   settings: WiggleSettings,
-  exportSize: ExportSize,
   framing: ExportFraming,
+  getDimensions: (frame: SourceFrame) => { width: number; height: number },
 ): GifExportRenderPlan {
   const [firstView] = getOrderedViews(stereoSplit, settings);
   const baseWidth = firstView.width;
@@ -68,7 +73,7 @@ export function getGifExportRenderPlan(
   const frame = framing === 'crop-overlap'
     ? getOverlapFrame(baseGeometry.first, baseGeometry.second, baseWidth, baseHeight)
     : { x: 0, y: 0, width: baseWidth, height: baseHeight };
-  const dimensions = getExportDimensions(frame, exportSize);
+  const dimensions = getDimensions(frame);
   const scaleX = dimensions.width / frame.width;
   const scaleY = dimensions.height / frame.height;
 
@@ -79,6 +84,34 @@ export function getGifExportRenderPlan(
   };
 }
 
+export function getGifExportRenderPlan(
+  stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: ExportSize,
+  framing: ExportFraming,
+): GifExportRenderPlan {
+  return getAnimatedExportRenderPlan(
+    stereoSplit,
+    settings,
+    framing,
+    (frame) => getExportDimensions(frame, exportSize),
+  );
+}
+
+export function getMp4ExportRenderPlan(
+  stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: Mp4ExportSize,
+  framing: ExportFraming,
+): GifExportRenderPlan {
+  return getAnimatedExportRenderPlan(
+    stereoSplit,
+    settings,
+    framing,
+    (frame) => getMp4ExportDimensions(frame, exportSize),
+  );
+}
+
 export function getFramedGifOutputDimensions(
   stereoSplit: StereoSplitResult,
   settings: WiggleSettings,
@@ -86,6 +119,16 @@ export function getFramedGifOutputDimensions(
   framing: ExportFraming,
 ) {
   return getGifExportRenderPlan(stereoSplit, settings, exportSize, framing)
+    .dimensions;
+}
+
+export function getFramedMp4OutputDimensions(
+  stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: Mp4ExportSize,
+  framing: ExportFraming,
+) {
+  return getMp4ExportRenderPlan(stereoSplit, settings, exportSize, framing)
     .dimensions;
 }
 
@@ -123,6 +166,25 @@ export function createFramedGifSource(
   framing: ExportFraming,
 ): StereoSplitResult {
   const plan = getGifExportRenderPlan(stereoSplit, settings, exportSize, framing);
+  const [firstView] = getOrderedViews(stereoSplit, settings);
+  const firstOutput = drawFramedView(firstView, plan.first, plan.dimensions);
+  const secondView = firstView === stereoSplit.leftView
+    ? stereoSplit.rightView
+    : stereoSplit.leftView;
+  const secondOutput = drawFramedView(secondView, plan.second, plan.dimensions);
+
+  return firstView === stereoSplit.leftView
+    ? { layout: stereoSplit.layout, leftView: firstOutput, rightView: secondOutput }
+    : { layout: stereoSplit.layout, leftView: secondOutput, rightView: firstOutput };
+}
+
+export function createFramedMp4Source(
+  stereoSplit: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: Mp4ExportSize,
+  framing: ExportFraming,
+): StereoSplitResult {
+  const plan = getMp4ExportRenderPlan(stereoSplit, settings, exportSize, framing);
   const [firstView] = getOrderedViews(stereoSplit, settings);
   const firstOutput = drawFramedView(firstView, plan.first, plan.dimensions);
   const secondView = firstView === stereoSplit.leftView

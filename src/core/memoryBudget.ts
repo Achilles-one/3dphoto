@@ -1,8 +1,13 @@
-import type { ExportSize } from '@/types/app';
+import type { ExportSize, Mp4ExportSize } from '@/types/app';
 import type { StereoSplitResult } from '@/types/stereo';
 
 import { getWiggleFrameCount } from './frameSequence.ts';
 import { createPreviewSizePlan, getExportDimensions } from './sizePolicy.ts';
+import {
+  calculateMp4Bitrate,
+  createMp4Timeline,
+  estimateMp4FileBytes,
+} from './mp4Policy.ts';
 
 const MEBIBYTE = 1024 * 1024;
 const RGBA_BYTES_PER_PIXEL = 4;
@@ -52,6 +57,16 @@ export interface GifExportMemoryPlan extends MemoryPlan {
 }
 
 export type GifExportMemoryPlans = Record<ExportSize, GifExportMemoryPlan>;
+
+export interface Mp4ExportMemoryPlan extends MemoryPlan {
+  size: Mp4ExportSize;
+  dimensions: { width: number; height: number };
+  bitrate: number;
+  durationMs: number;
+  outputBytes: number;
+}
+
+export type Mp4ExportMemoryPlans = Record<Mp4ExportSize, Mp4ExportMemoryPlan>;
 
 export interface SbsExportMemoryPlan extends MemoryPlan {
   dimensions: { width: number; height: number } | null;
@@ -271,6 +286,56 @@ export function getRecommendedGifSize(
   }
 
   return null;
+}
+
+export function createMp4ExportMemoryPlans(
+  source: GifSourceMetrics,
+  profile: MemoryBudgetProfile,
+  frameCount: number,
+  frameDelay: number,
+  outputDimensions: Record<Mp4ExportSize, { width: number; height: number }>,
+): Mp4ExportMemoryPlans {
+  const createPlan = (size: Mp4ExportSize): Mp4ExportMemoryPlan => {
+    const dimensions = outputDimensions[size];
+    const outputPixels = dimensions.width * dimensions.height;
+    const frameBytes = outputPixels * RGBA_BYTES_PER_PIXEL;
+    const bitrate = calculateMp4Bitrate(dimensions.width, dimensions.height, size);
+    const timeline = createMp4Timeline(
+      Array.from({ length: frameCount }, () => ({ delay: frameDelay })),
+    );
+    const outputBytes = estimateMp4FileBytes(bitrate, timeline.encodedDurationMs);
+    const residentBytes = source.residentPixels * RGBA_BYTES_PER_PIXEL;
+    const decodeBytes = source.decodePixels * RGBA_BYTES_PER_PIXEL;
+    const exportViewsBytes = frameBytes * 2;
+    const uniqueFramesBytes = frameBytes * frameCount;
+    const mainThreadPeakBytes = residentBytes + decodeBytes + exportViewsBytes + uniqueFramesBytes;
+    const workerPeakBytes =
+      residentBytes +
+      exportViewsBytes +
+      uniqueFramesBytes +
+      frameBytes * 2 +
+      32 * MEBIBYTE +
+      outputBytes * 2;
+    const estimatedPeakBytes = Math.max(mainThreadPeakBytes, workerPeakBytes);
+
+    return {
+      size,
+      dimensions,
+      bitrate,
+      durationMs: timeline.encodedDurationMs,
+      outputBytes,
+      estimatedPeakBytes,
+      limitBytes: profile.maxWorkingMemoryBytes,
+      allowed:
+        estimatedPeakBytes <= profile.maxWorkingMemoryBytes &&
+        outputBytes <= profile.maxFileBytes,
+    };
+  };
+
+  return {
+    '1080': createPlan('1080'),
+    '1440': createPlan('1440'),
+  };
 }
 
 export function estimateGifEncodingMemoryBytes(

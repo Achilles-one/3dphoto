@@ -1,11 +1,17 @@
-import type { ExportFormat, ExportSize, WiggleSettings } from './app';
+import type {
+  ExportFormat,
+  ExportSelectionSize,
+  WiggleSettings,
+} from './app';
 
-export interface GifFramePayload {
+export interface AnimationFramePayload {
   data: Uint8ClampedArray;
   width: number;
   height: number;
   delay: number;
 }
+
+export type GifFramePayload = AnimationFramePayload;
 
 export interface GifWorkerRequest {
   type: 'encode' | 'cancel';
@@ -38,8 +44,16 @@ export type GifWorkerResponse =
   | GifWorkerCanceled
   | GifWorkerFailure;
 
+export interface Mp4WorkerRequest {
+  type: 'encode';
+  frames: AnimationFramePayload[];
+  bitrate: number;
+}
+
+export type Mp4WorkerResponse = GifWorkerResponse;
+
 export interface GifExportRequest {
   format: ExportFormat;
   settings: WiggleSettings;
-  exportSize: ExportSize;
+  exportSize: ExportSelectionSize;
 }

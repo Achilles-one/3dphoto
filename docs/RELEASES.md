@@ -11,6 +11,7 @@ append `-dirty` when the working tree has uncommitted changes.
 - Local JPG, PNG and MPO processing with split, alignment and wiggle previews.
 - Full-resolution-aware GIF export with adaptive memory protection.
 - Shared GIF palette and decoded-frame quality regression tests.
+- Local H.264 MP4 export through WebCodecs and Mediabunny, with 1080/1440 longest-edge presets, 25fps timing, VBR quality targets, complete-loop duration, capability detection and cancellation.
 - MPO to SBS PNG export when both view dimensions match.
 - Stable user-facing diagnostic codes and prefilled GitHub feedback.
 
@@ -22,6 +23,8 @@ append `-dirty` when the working tree has uncommitted changes.
   device verification.
 - Shared-palette GIF quality has automated synthetic coverage but still needs
   authorized real-photo review for skin tone, banding and edge flicker.
+- MP4 availability depends on runtime WebCodecs H.264 support; real-device 1440,
+  mobile download and low-memory verification remain pending.
 - Analytics consent remains tracked separately under P0-05.
 
 ### Feedback destination

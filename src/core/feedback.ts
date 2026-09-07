@@ -1,7 +1,7 @@
 import type {
   ExportFormat,
   ExportFraming,
-  ExportSize,
+  ExportSelectionSize,
   InputFormat,
   Locale,
 } from '@/types/app';
@@ -16,7 +16,7 @@ export interface FeedbackContext {
   browser: string;
   inputFormat: InputFormat | 'not-loaded' | 'unknown';
   exportFormat: ExportFormat | 'not-applicable';
-  exportSize: ExportSize | 'not-applicable';
+  exportSize: ExportSelectionSize | 'not-applicable';
   exportFraming: ExportFraming | 'not-applicable';
   errorCode: string;
 }
@@ -53,7 +53,7 @@ export function createFeedbackUrl(context: FeedbackContext): string {
         input: '输入格式',
         format: '导出格式',
         size: '导出尺寸',
-        framing: 'GIF 导出取景',
+        framing: 'GIF/MP4 导出取景',
         error: '错误码',
         privacy: '_以下信息在本地生成，不包含图片内容或文件名。_',
       }

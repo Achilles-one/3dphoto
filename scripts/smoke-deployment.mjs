@@ -51,8 +51,10 @@ function collectStaticAssetUrls(html, pageUrl) {
   return [...urls];
 }
 
-function findGifWorkerUrl(javascript, scriptUrl) {
-  const match = javascript.match(/(?:\/assets\/|\.\/)?gifWorker-[A-Za-z0-9_-]+\.js/);
+function findWorkerUrl(javascript, scriptUrl, workerName) {
+  const match = javascript.match(
+    new RegExp(`(?:/assets/|\\./)?${workerName}-[A-Za-z0-9_-]+\\.js`),
+  );
 
   if (!match) {
     return null;
@@ -173,30 +175,38 @@ export async function smokeDeployment(target) {
     fail('Homepage does not reference a JavaScript or CSS asset.');
   }
 
-  let workerUrl = null;
+  let gifWorkerUrl = null;
+  let mp4WorkerUrl = null;
   for (const assetUrl of assetUrls) {
     const assetResponse = await fetchChecked(assetUrl, 'Static asset');
     verifySecurityHeaders(assetResponse, `Static asset ${new URL(assetUrl).pathname}`);
     const source = await assetResponse.text();
 
-    if (!workerUrl && new URL(assetUrl).pathname.endsWith('.js')) {
-      workerUrl = findGifWorkerUrl(source, assetResponse.url);
+    if (new URL(assetUrl).pathname.endsWith('.js')) {
+      gifWorkerUrl ||= findWorkerUrl(source, assetResponse.url, 'gifWorker');
+      mp4WorkerUrl ||= findWorkerUrl(source, assetResponse.url, 'mp4Worker');
     }
   }
 
-  if (!workerUrl) {
+  if (!gifWorkerUrl) {
     fail('The GIF Worker URL is missing from the deployed JavaScript.');
   }
+  if (!mp4WorkerUrl) {
+    fail('The MP4 Worker URL is missing from the deployed JavaScript.');
+  }
 
-  const workerResponse = await fetchChecked(workerUrl, 'GIF Worker');
-  verifySecurityHeaders(workerResponse, 'GIF Worker');
-  const gifBytes = await runMinimalGifExport(await workerResponse.text());
+  const gifWorkerResponse = await fetchChecked(gifWorkerUrl, 'GIF Worker');
+  verifySecurityHeaders(gifWorkerResponse, 'GIF Worker');
+  const gifBytes = await runMinimalGifExport(await gifWorkerResponse.text());
+  const mp4WorkerResponse = await fetchChecked(mp4WorkerUrl, 'MP4 Worker');
+  verifySecurityHeaders(mp4WorkerResponse, 'MP4 Worker');
 
   return {
     assetCount: assetUrls.length,
     gifBytes,
     pageUrl: pageResponse.url,
-    workerUrl,
+    gifWorkerUrl,
+    mp4WorkerUrl,
   };
 }
 
@@ -213,7 +223,7 @@ if (isCommandLine) {
     try {
       const result = await smokeDeployment(target);
       console.log(
-        `[smoke-deployment] OK: homepage, ${result.assetCount} static assets, GIF Worker, and ${result.gifBytes}-byte minimal GIF export.`,
+        `[smoke-deployment] OK: homepage, ${result.assetCount} static assets, GIF/MP4 Workers, and ${result.gifBytes}-byte minimal GIF export.`,
       );
     } catch (error) {
       console.error(error instanceof Error ? error.message : error);
