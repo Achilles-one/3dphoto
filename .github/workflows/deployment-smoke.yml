@@ -63,7 +63,7 @@ jobs:
       - name: Install ffprobe
         run: choco install ffmpeg --no-progress -y
       - name: Export and verify one deployed 1080 MP4
-        run: npm run test:mp4:built -- --grep "@production"
+        run: npm run test:mp4:built -- --grep=@production
       - name: Upload synthetic diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v6
