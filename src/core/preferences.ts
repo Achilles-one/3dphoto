@@ -1,4 +1,8 @@
-import type { ExportFormat, ExportSize, Locale } from '@/types/app';
+import type {
+  ExportFormat,
+  ExportSelectionSize,
+  Locale,
+} from '@/types/app';
 
 const LOCALE_KEY = '3d-photo-enhancer-locale';
 const EXPORT_KEY = '3d-photo-enhancer-export-preference';
@@ -21,7 +25,7 @@ export function storeLocale(locale: Locale) {
 
 export interface ExportPreference {
   format: ExportFormat;
-  size: ExportSize;
+  size: ExportSelectionSize;
 }
 
 export function getExportPreference(): ExportPreference {
@@ -32,8 +36,17 @@ export function getExportPreference(): ExportPreference {
   try {
     const preference = JSON.parse(window.localStorage.getItem(EXPORT_KEY) ?? '{}') as Partial<ExportPreference>;
     return {
-      format: preference.format === 'sbs' ? 'sbs' : 'gif',
-      size: preference.size === 'small' || preference.size === 'large' ? preference.size : 'medium',
+      format:
+        preference.format === 'sbs' || preference.format === 'mp4'
+          ? preference.format
+          : 'gif',
+      size:
+        preference.size === 'small' ||
+        preference.size === 'large' ||
+        preference.size === '1080' ||
+        preference.size === '1440'
+          ? preference.size
+          : 'medium',
     };
   } catch {
     return { format: 'gif', size: 'medium' };

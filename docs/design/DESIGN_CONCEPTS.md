@@ -92,7 +92,7 @@ The Lab is a two-zone workspace:
 
 The preview owns the page. The controls are an instrument panel, not a collection of equal cards. The control column groups the existing workflow under `View`, `Align`, `Motion`, and `Export`, but only exposes capabilities that already exist in the MVP.
 
-The visible v1 alignment controls are `Horizontal`, `Vertical`, and `Overlay`. `Split Preview` remains hidden. MP4, WebM, and advanced export remain deferred. There is no third dashboard column and no new preview mode.
+The visible v1 alignment controls are `Horizontal`, `Vertical`, and `Overlay`. `Split Preview` remains hidden. The export dialog includes GIF and the approved H.264 MP4 option; WebM and other advanced export remain deferred. There is no third dashboard column and no new preview mode.
 
 ### Editorial Guide entry
 

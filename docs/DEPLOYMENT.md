@@ -31,7 +31,7 @@
 
 1. 禁止直接 push 和 force push。
 2. 必须通过 Pull Request 合并。
-3. 必须通过 `CI / release-check`。
+3. 必须通过 `CI / release-check` 与 `CI / mp4-browser-gate`。
 4. 分支落后时要求更新后重跑检查。
 5. 合并前必须打开 Vercel Preview，完成 UI、移动端和真实文件验收。
 6. 统一使用 Squash merge，确保每个 PR 对应一个可定位的生产提交。
@@ -59,6 +59,7 @@
 ## 检查
 
 - [ ] CI / release-check 通过
+- [ ] CI / mp4-browser-gate 通过
 - [ ] Vercel Preview 构建成功
 - [ ] 已打开 Preview 检查本次改动
 - [ ] 涉及 UI：检查 PC 和移动端
@@ -98,6 +99,8 @@ npm ci
 npm run release:check
 ```
 
+`release:check` 除单元测试、类型检查、构建和 Worker 产物检查外，还必须运行 Playwright MP4 门禁。真实 H.264 编码放在 Windows Edge CI 任务中；若运行环境不支持编码则任务失败，不得跳过。CI 可安装 `ffprobe` 验证视频流，但该工具不得进入网站依赖或构建产物。
+
 Vercel 项目建议配置：
 
 - Framework Preset：Vite。
@@ -130,7 +133,7 @@ curl.exe -I https://www.achillescat.com
 curl.exe -I -L https://achillescat.com
 ```
 
-浏览器也可在开发者工具的 Network 中选中首页请求，在 Response Headers 查看。应同时抽查首页、`/assets/` 下的哈希资源和 GIF Worker，因为不同路径可能使用不同缓存策略。
+浏览器也可在开发者工具的 Network 中选中首页请求，在 Response Headers 查看。应同时抽查首页、`/assets/` 下的哈希资源、GIF Worker 和 MP4 Worker，因为不同路径可能使用不同缓存策略。
 
 `vercel.json` 不负责触发部署，也不取代当前“push Git → Vercel 自动部署”。它是随代码版本管理的 Vercel平台配置，可声明响应头、重定向、重写、构建命令和输出目录。本项目增加它的主要价值是：
 
@@ -147,12 +150,15 @@ curl.exe -I -L https://achillescat.com
 npm run smoke:deployment -- https://www.achillescat.com
 ```
 
+自动部署 smoke 只执行一次较轻的 1080 MP4 导出；1440 真实编码留在 `release:check`，避免每次生产 smoke 重复高负载测试。
+
 还需人工确认：
 
 - 首页和静态资源成功加载。
 - 页面没有生产控制台错误。
 - 移动端无横向滚动。
-- GIF Worker 能完成最小导出。
+- GIF Worker 能完成最小导出；MP4 Worker 资源可加载且响应头正确。
+- 在支持 WebCodecs H.264 的浏览器中完成一次 MP4 下载，并确认视频无音频、25fps、尺寸为偶数；不支持时确认 MP4 明确禁用且 GIF 可用。
 - Weeview JPG 和 FUJIFILM MPO 核心路径可用。
 
 ## 7. 回滚

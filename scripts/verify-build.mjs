@@ -37,6 +37,10 @@ if (!existsSync(distDirectory)) {
     fail('The GIF worker bundle is missing from dist/assets.');
   }
 
+  if (!assets.some((asset) => /^mp4Worker-.+\.js$/.test(asset))) {
+    fail('The MP4 worker bundle is missing from dist/assets.');
+  }
+
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     if (!vercel.includes(name) || !vercel.includes(value)) {
       fail(`vercel.json is missing the expected ${name} policy.`);

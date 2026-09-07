@@ -67,6 +67,6 @@ test('Chinese feedback copy keeps diagnostic values intact', () => {
   })).searchParams.get('body') ?? '';
 
   assert.match(body, /安全诊断信息/);
-  assert.match(body, /GIF 导出取景: crop-overlap/);
+  assert.match(body, /GIF\/MP4 导出取景: crop-overlap/);
   assert.match(body, /错误码: 3DP-E001 \(export-failed\)/);
 });

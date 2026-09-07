@@ -37,5 +37,38 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Verify deployed homepage, assets, headers, and GIF Worker
+      - name: Verify deployed homepage, assets, headers, and export Workers
         run: npm run smoke:deployment -- "$SMOKE_URL"
+
+  mp4-smoke:
+    name: mp4-smoke
+    if: github.event_name != 'deployment_status' || github.event.deployment_status.state == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      MP4_TEST_BASE_URL: ${{ inputs.url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      PLAYWRIGHT_CHANNEL: msedge
+      REQUIRE_FFPROBE: '1'
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install ffprobe
+        run: choco install ffmpeg --no-progress -y
+      - name: Export and verify one deployed 1080 MP4
+        run: npm run test:mp4:built -- --grep=@production
+      - name: Upload synthetic diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mp4-production-smoke-diagnostics
+          path: output/playwright/
+          if-no-files-found: ignore
+          retention-days: 7

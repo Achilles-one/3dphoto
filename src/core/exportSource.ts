@@ -1,4 +1,9 @@
-import type { ExportFraming, ExportSize, WiggleSettings } from '@/types/app';
+import type {
+  ExportFraming,
+  ExportSize,
+  Mp4ExportSize,
+  WiggleSettings,
+} from '@/types/app';
 import type { DecodedImage } from '@/types/image';
 import type {
   ResolvedStereoLayout,
@@ -7,7 +12,11 @@ import type {
 } from '@/types/stereo';
 
 import { getExportDimensions } from './sizePolicy.ts';
-import { getGifExportRenderPlan } from './exportFraming.ts';
+import {
+  getGifExportRenderPlan,
+  getMp4ExportRenderPlan,
+  type GifExportRenderPlan,
+} from './exportFraming.ts';
 
 interface SourceRect {
   x: number;
@@ -151,13 +160,12 @@ export function createStereoExportSource(
  * Renders directly from the decoded original into final-size GIF frames, so a
  * crop-overlap export never has to create full-resolution split canvases.
  */
-export function createFramedGifExportSource(
+function createFramedAnimatedExportSource(
   decodedImage: DecodedImage,
   layout: ResolvedStereoLayout,
   previewSource: StereoSplitResult,
   settings: WiggleSettings,
-  exportSize: ExportSize,
-  framing: ExportFraming,
+  createPlan: (rawSource: StereoSplitResult, sourceSettings: WiggleSettings) => GifExportRenderPlan,
 ): StereoSplitResult {
   const sourceDimensions = getStereoViewDimensions(
     decodedImage.width,
@@ -180,12 +188,7 @@ export function createFramedGifExportSource(
     },
   } satisfies StereoSplitResult;
   const sourceSettings = getExportSettings(previewSource, rawSource, settings);
-  const plan = getGifExportRenderPlan(
-    rawSource,
-    sourceSettings,
-    exportSize,
-    framing,
-  );
+  const plan = createPlan(rawSource, sourceSettings);
   const [leftRect, rightRect] = getStereoSourceRects(
     decodedImage.width,
     decodedImage.height,
@@ -210,6 +213,50 @@ export function createFramedGifExportSource(
       plan.dimensions,
     ),
   };
+}
+
+export function createFramedGifExportSource(
+  decodedImage: DecodedImage,
+  layout: ResolvedStereoLayout,
+  previewSource: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: ExportSize,
+  framing: ExportFraming,
+): StereoSplitResult {
+  return createFramedAnimatedExportSource(
+    decodedImage,
+    layout,
+    previewSource,
+    settings,
+    (rawSource, sourceSettings) => getGifExportRenderPlan(
+      rawSource,
+      sourceSettings,
+      exportSize,
+      framing,
+    ),
+  );
+}
+
+export function createFramedMp4ExportSource(
+  decodedImage: DecodedImage,
+  layout: ResolvedStereoLayout,
+  previewSource: StereoSplitResult,
+  settings: WiggleSettings,
+  exportSize: Mp4ExportSize,
+  framing: ExportFraming,
+): StereoSplitResult {
+  return createFramedAnimatedExportSource(
+    decodedImage,
+    layout,
+    previewSource,
+    settings,
+    (rawSource, sourceSettings) => getMp4ExportRenderPlan(
+      rawSource,
+      sourceSettings,
+      exportSize,
+      framing,
+    ),
+  );
 }
 
 /** Maps alignment measured on preview pixels to equivalent export-source pixels. */

@@ -17,6 +17,11 @@ export function createGifFileName(sourceName: string | undefined): string {
   return `${baseName}-wiggle.gif`;
 }
 
+export function createMp4FileName(sourceName: string | undefined): string {
+  const baseName = sourceName?.replace(/\.[^.]+$/, '').trim() || '3d-photo';
+  return `${baseName}-wiggle.mp4`;
+}
+
 export function createSbsFileName(sourceName: string | undefined): string {
   const baseName = sourceName?.replace(/\.[^.]+$/, '').trim() || '3d-photo';
   return `${baseName}-sbs.png`;

@@ -80,7 +80,7 @@ const errorCopy: Record<
     recoverable: true,
   },
   'export-failed': {
-    message: 'GIF export failed.',
+    message: 'Export failed.',
     action: 'Try a smaller size.',
     recoverable: true,
   },
@@ -111,7 +111,7 @@ const errorCopy: Record<
   },
   'sbs-dimensions-mismatch': {
     message: 'The two views do not have matching dimensions for SBS export.',
-    action: 'Choose GIF, or use an MPO with two views of the same size.',
+    action: 'Choose GIF or MP4, or use an MPO with two views of the same size.',
     recoverable: true,
   },
 };
@@ -123,13 +123,13 @@ const errorCopyZh: typeof errorCopy = {
   'image-too-small': { message: '此图片太小，无法拆分为双视图。', action: '请尝试更大的 3D 照片。', recoverable: false },
   'decoded-image-too-large': { message: '此图片像素过多，无法在当前设备安全处理。', action: '请选择像素尺寸更小的图片。', recoverable: false },
   'image-too-large': { message: '此导出超出当前设备的安全内存预算。', action: '请选择可用的较小尺寸。', recoverable: true },
-  'export-failed': { message: 'GIF 导出失败。', action: '请尝试较小的尺寸。', recoverable: true },
+  'export-failed': { message: '导出失败。', action: '请尝试较小的尺寸。', recoverable: true },
   'browser-unsupported': { message: '您的浏览器不支持此功能。', action: '请使用最新版 Chrome、Edge 或 Safari。', recoverable: false },
   'mpo-invalid': { message: '此 MPO 文件无效或不完整。', action: '请选择包含两个有效视图的 MPO。', recoverable: false },
   'mpo-insufficient-views': { message: '此 MPO 不含两个有效视图。', action: '请选择由 3D 相机创建的 MPO。', recoverable: false },
   'mpo-decode-failed': { message: '无法解码 MPO 中的图片。', action: '请尝试其他 MPO 文件。', recoverable: false },
   'mpo-extra-images': { message: '此 MPO 包含超过两个视图。', action: 'Wiggle 预览仅使用前两个视图。', recoverable: true },
-  'sbs-dimensions-mismatch': { message: '两个视图尺寸不匹配，无法导出 SBS。', action: '请选择 GIF，或使用尺寸相同的 MPO。', recoverable: true },
+  'sbs-dimensions-mismatch': { message: '两个视图尺寸不匹配，无法导出 SBS。', action: '请选择 GIF 或 MP4，或使用尺寸相同的 MPO。', recoverable: true },
 };
 
 function createFileInfo(file: File): UploadedFileInfo {
