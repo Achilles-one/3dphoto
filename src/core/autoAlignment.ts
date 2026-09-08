@@ -1,4 +1,9 @@
-import type { AlignmentWorkerRequest, AlignmentWorkerResponse, AutoAlignmentResult } from '@/types/alignment';
+import {
+  ALIGNMENT_WORKER_RUNTIME_VERSION,
+  type AlignmentWorkerRequest,
+  type AlignmentWorkerResponse,
+  type AutoAlignmentResult,
+} from '../types/alignment.ts';
 import type { StereoSplitResult } from '@/types/stereo';
 
 const MAX_ANALYSIS_EDGE = 640;
@@ -54,6 +59,7 @@ export function startAutoAlignment(
   const right = createAnalysisImage(stereoSplit.rightView.canvas, scale);
   const worker = new Worker(new URL('../workers/alignmentWorker.ts', import.meta.url), { type: 'module' });
   return startAutoAlignmentWorker(worker, {
+    runtimeVersion: ALIGNMENT_WORKER_RUNTIME_VERSION,
     left,
     right,
     maxOffsetX: alignmentLimit * scale,

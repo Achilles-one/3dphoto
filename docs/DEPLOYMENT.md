@@ -111,6 +111,8 @@ Vercel 项目建议配置：
 
 仓库已使用根目录 `vercel.json` 声明 Vercel 的构建、缓存和基础安全响应头；Cloudflare/Sites 遗留的 `_headers`、`wrangler.toml`、Sites Worker 与项目元数据均已移除。
 
+自动主体对齐在 Worker 内使用 OpenCV.js WebAssembly，因此首页与 `/assets/` 响应的 CSP 必须包含 `script-src 'self' 'wasm-unsafe-eval'`；不得改用权限更宽的 `'unsafe-eval'`。主线程请求与自动对齐 Worker 共享显式运行时协议版本；CSP/Wasm 运行边界变更时更新该版本，使 Worker 内容哈希随之变化并绕过已经缓存一年的旧响应。部署后必须同时检查首页和 `alignmentWorker-*.js` 的实际 CSP，并用真实 SBS 或 MPO 初始化一次自动对齐。
+
 2026-08-13 实测：
 
 - `https://www.achillescat.com` 返回 `200 OK`，服务端为 Vercel。
@@ -155,7 +157,7 @@ npm run smoke:deployment -- https://www.achillescat.com
 还需人工确认：
 
 - 首页和静态资源成功加载。
-- 页面没有生产控制台错误。
+- 页面没有生产控制台错误；自动对齐 Worker 能在生产 CSP 下完成初始化，不出现 `WebAssembly.instantiate()` CSP 错误。
 - 移动端无横向滚动。
 - GIF Worker 能完成最小导出；MP4 Worker 资源可加载且响应头正确。
 - 在支持 WebCodecs H.264 的浏览器中完成一次 MP4 下载，并确认视频无音频、25fps、尺寸为偶数；不支持时确认 MP4 明确禁用且 GIF 可用。

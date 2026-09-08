@@ -16,6 +16,7 @@ append `-dirty` when the working tree has uncommitted changes.
 - Stable user-facing diagnostic codes and prefilled GitHub feedback.
 - Local automatic subject alignment with bounded analysis images, Worker-based ORB matching, confidence-gated subject disparity estimation, and manual-action cancellation.
 - Automatic alignment now compares Vue-backed stereo state by its raw identity; every task settles within 30 seconds and shares one idempotent Worker/timer cleanup path.
+- Production CSP now permits WebAssembly through the narrow `'wasm-unsafe-eval'` source while continuing to reject JavaScript `'unsafe-eval'`; the alignment Worker carries an explicit runtime protocol version so its content hash changes and previously immutable responses cannot retain the blocking policy.
 
 ### Known issues
 

@@ -55,11 +55,22 @@ if (!existsSync(distDirectory)) {
   const scriptPolicy = csp
     .split('; ')
     .find((directive) => directive.startsWith('script-src '));
+  const scriptSources = new Set(scriptPolicy?.split(/\s+/).slice(1));
   if (
-    scriptPolicy !== "script-src 'self'"
+    !scriptSources.has("'self'")
+    || !scriptSources.has("'wasm-unsafe-eval'")
+    || scriptSources.has("'unsafe-eval'")
     || !csp.includes("worker-src 'self' blob:")
   ) {
     fail('The Content-Security-Policy does not enforce the P0-07 boundary.');
+  }
+
+  const alignmentWorkerAsset = assets.find((asset) => /^alignmentWorker-.+\.js$/.test(asset));
+  const alignmentWorkerJavaScript = alignmentWorkerAsset
+    ? readFileSync(resolve(assetsDirectory, alignmentWorkerAsset), 'utf8')
+    : '';
+  if (!alignmentWorkerJavaScript.includes('wasm-csp-v1')) {
+    fail('The automatic alignment Worker bundle is missing its Wasm CSP runtime version.');
   }
 
   if (

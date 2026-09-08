@@ -54,6 +54,8 @@ CSS 只有同时满足以下条件，才可标记为“已收敛”：
 
 异步测试必须覆盖上传时的“Vue 响应式代理与原始 `stereoSplit`”以及布局切换后的“当前状态代理与任务输入代理”两种身份校验，证明两侧经 `toRaw()` 解包后有效结果不会被误判为过期；使用可控 Worker 和假计时器验证 30 秒前不超时、达到 30 秒返回 `timeout`，并分别断言成功、Worker 错误、主动取消和超时都只结算一次、清除计时器、终止或释放 Worker，且 `running` 状态结束。
 
+生产构建检查必须验证 CSP 同时保留 `script-src 'self'`、加入 `'wasm-unsafe-eval'` 且不包含 `'unsafe-eval'`，并验证自动对齐 Worker 构建内容带有当前 Wasm CSP 运行时协议版本。Preview/Production 验收必须在实际响应头下初始化一次自动对齐 Worker；仅确认 Worker 文件存在不视为通过。
+
 ## 6. MP4 自动化门禁
 
 - 保留尺寸、码率、循环和累计误差分配的单元测试；另用 Playwright 在 Windows CI 的 Edge 中对生产构建执行真实 WebCodecs H.264 导出。
