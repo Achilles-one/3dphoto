@@ -462,6 +462,16 @@ p {
   height: 100%;
 }
 
+.auto-alignment-status {
+  position: absolute;
+  inset: auto var(--space-sm) var(--space-sm);
+  margin: 0;
+  color: var(--color-stage-ink);
+  font-size: var(--text-xs);
+  text-align: center;
+  pointer-events: none;
+}
+
 .wiggle-canvas-shell {
   display: grid;
   width: 100%;

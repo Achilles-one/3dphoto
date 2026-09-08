@@ -10,6 +10,7 @@ const props = defineProps<{
   stereoSplit: StereoSplitResult | null;
   settings: WiggleSettings;
   locale: Locale;
+  autoAlignmentStatus: 'idle' | 'running' | 'success' | 'failed';
 }>();
 
 const canvasElement = ref<HTMLCanvasElement | null>(null);
@@ -94,6 +95,20 @@ watch(
           class="alignment-canvas"
           :aria-label="locale === 'en' ? 'Overlapped left and right views' : '左右眼叠加画面'"
         />
+        <p
+          v-if="autoAlignmentStatus !== 'idle'"
+          class="auto-alignment-status"
+          role="status"
+          aria-live="polite"
+        >
+          {{
+            autoAlignmentStatus === 'running'
+              ? locale === 'en' ? 'Identifying the main subject…' : '正在识别主要主体…'
+              : autoAlignmentStatus === 'success'
+                ? locale === 'en' ? 'Automatically aligned. Fine-tuning is available.' : '已自动对齐，可继续微调'
+                : locale === 'en' ? 'Subject not identified reliably. Adjust manually.' : '未能可靠识别主体，请手动调整'
+          }}
+        </p>
       </template>
       <template v-else>
         {{ locale === 'en' ? 'Upload a stereo photo to align the left and right views here.' : '上传立体照片后，可在这里对齐左右眼画面。' }}

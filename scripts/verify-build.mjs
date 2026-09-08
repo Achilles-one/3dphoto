@@ -41,6 +41,10 @@ if (!existsSync(distDirectory)) {
     fail('The MP4 worker bundle is missing from dist/assets.');
   }
 
+  if (!assets.some((asset) => /^alignmentWorker-.+\.js$/.test(asset))) {
+    fail('The automatic alignment worker bundle is missing from dist/assets.');
+  }
+
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     if (!vercel.includes(name) || !vercel.includes(value)) {
       fail(`vercel.json is missing the expected ${name} policy.`);

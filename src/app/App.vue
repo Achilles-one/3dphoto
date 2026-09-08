@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, toRaw, watch } from "vue";
 
 import ControlPanel from "@/components/ControlPanel.vue";
 import AlignmentPreviewPanel from "@/components/AlignmentPreviewPanel.vue";
@@ -35,6 +35,7 @@ import {
 import { canEncodeMp4, exportMp4 } from "@/core/mp4Encoding";
 import { SbsDimensionsMismatchError, exportSbs } from "@/core/sbsExport";
 import { getAlignmentLimit } from "@/core/alignment";
+import { startAutoAlignment, type AutoAlignmentTask } from "@/core/autoAlignment";
 import {
   isTooSmallForStereo,
   isTooSmallForStereoView,
@@ -123,6 +124,9 @@ let currentSourceFile: File | null = null;
 let uploadGeneration = 0;
 let wiggleCreationGeneration = 0;
 let layoutChangeGeneration = 0;
+let autoAlignmentGeneration = 0;
+let activeAutoAlignmentTask: AutoAlignmentTask | null = null;
+const autoAlignmentStatus = ref<"idle" | "running" | "success" | "failed">("idle");
 const isLayoutChanging = ref(false);
 const memoryBudget = getRuntimeMemoryBudget();
 const appVersion = __APP_VERSION__;
@@ -435,7 +439,64 @@ function invalidateActiveExportSession() {
   session.cancelTask?.();
 }
 
+function cancelAutoAlignment() {
+  autoAlignmentGeneration += 1;
+  activeAutoAlignmentTask?.cancel();
+  activeAutoAlignmentTask = null;
+  autoAlignmentStatus.value = "idle";
+}
+
+async function runAutoAlignment(stereoSplit: StereoSplitResult) {
+  cancelAutoAlignment();
+  const generation = autoAlignmentGeneration;
+  const task = startAutoAlignment(stereoSplit, getAlignmentLimit(stereoSplit));
+  activeAutoAlignmentTask = task;
+  autoAlignmentStatus.value = "running";
+  const result = await task.promise;
+  if (
+    generation !== autoAlignmentGeneration ||
+    activeAutoAlignmentTask !== task ||
+    toRaw(state.stereoSplit) !== toRaw(stereoSplit)
+  ) {
+    if (activeAutoAlignmentTask === task) {
+      activeAutoAlignmentTask = null;
+      autoAlignmentStatus.value = "idle";
+    }
+    return;
+  }
+
+  activeAutoAlignmentTask = null;
+  if (result.ok) {
+    setAlignment(result.alignmentX, result.alignmentY);
+    autoAlignmentStatus.value = "success";
+    showMessage("success", isEnglish.value
+      ? "Automatically aligned. You can continue fine-tuning."
+      : "已自动对齐，可继续微调");
+  } else {
+    autoAlignmentStatus.value = "failed";
+    showMessage("warning", isEnglish.value
+      ? "The subject could not be identified reliably. Please adjust manually."
+      : "未能可靠识别主体，请手动调整");
+  }
+}
+
+function handleAlignmentChanged(alignmentX: number, alignmentY: number) {
+  cancelAutoAlignment();
+  setAlignment(alignmentX, alignmentY);
+}
+
+function handleAlignmentReset() {
+  cancelAutoAlignment();
+  resetAlignment();
+}
+
+function handleOverlayOpacityChanged(opacity: number) {
+  cancelAutoAlignment();
+  setOverlayOpacity(opacity);
+}
+
 function deleteImg() {
+  cancelAutoAlignment();
   uploadGeneration += 1;
   wiggleCreationGeneration += 1;
   layoutChangeGeneration += 1;
@@ -476,6 +537,7 @@ async function toggleLayout() {
   }
 
   const generation = ++layoutChangeGeneration;
+  cancelAutoAlignment();
   const layout = nextLayout.value;
   isLayoutChanging.value = true;
   let processedImage: ReturnType<typeof createProcessedImageInfo> | null = null;
@@ -504,6 +566,7 @@ async function toggleLayout() {
       releaseStereoSplit(previousStereoSplit);
       processedImage = null;
       stereoSplit = null;
+      void runAutoAlignment(state.stereoSplit!);
     } finally {
       closeDecodedImage(decodedImage);
     }
@@ -521,6 +584,7 @@ async function toggleLayout() {
 }
 
 async function handleCreateWiggle() {
+  cancelAutoAlignment();
   if (!startCreatingWiggle()) {
     return;
   }
@@ -599,6 +663,7 @@ async function handleFileAccepted(file: File) {
   }
 
   invalidateActiveExportSession();
+  cancelAutoAlignment();
   const generation = ++uploadGeneration;
   wiggleCreationGeneration += 1;
   layoutChangeGeneration += 1;
@@ -686,6 +751,8 @@ async function handleFileAccepted(file: File) {
         rightHeight: mpoPair.rightView.height,
       });
 
+      void runAutoAlignment(stereoSplit);
+
       return;
     }
 
@@ -759,6 +826,7 @@ async function handleFileAccepted(file: File) {
         rightWidth: stereoSplit.rightView.width,
         rightHeight: stereoSplit.rightView.height,
       });
+      void runAutoAlignment(stereoSplit);
     } finally {
       closeDecodedImage(decodedImage);
       if (!committed) {
@@ -1049,6 +1117,7 @@ function handlePlaybackToggle() {
 }
 
 onUnmounted(() => {
+  cancelAutoAlignment();
   uploadGeneration += 1;
   wiggleCreationGeneration += 1;
   layoutChangeGeneration += 1;
@@ -1176,6 +1245,7 @@ onUnmounted(() => {
                 :stereo-split="state.stereoSplit"
                 :settings="state.settings"
                 :locale="state.locale"
+                :auto-alignment-status="autoAlignmentStatus"
               >
                 <template #stage-input>
                   <div v-if="showStageInput" class="stage-input-entry">
@@ -1241,9 +1311,9 @@ onUnmounted(() => {
             :alignment-limit="alignmentLimit"
             :locale="state.locale"
             :disabled="state.phase !== 'preview'"
-            @alignment-changed="setAlignment"
-            @overlay-opacity-changed="setOverlayOpacity"
-            @alignment-reset="resetAlignment"
+            @alignment-changed="handleAlignmentChanged"
+            @overlay-opacity-changed="handleOverlayOpacityChanged"
+            @alignment-reset="handleAlignmentReset"
             @create-wiggle-requested="handleCreateWiggle"
             @playback-toggled="handlePlaybackToggle"
             @swap-eyes-toggled="toggleSwapEyes"
