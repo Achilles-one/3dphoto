@@ -14,6 +14,8 @@ append `-dirty` when the working tree has uncommitted changes.
 - Local H.264 MP4 export through WebCodecs and Mediabunny, with 1080/1440 longest-edge presets, 25fps timing, VBR quality targets, complete-loop duration, capability detection and cancellation.
 - MPO to SBS PNG export when both view dimensions match.
 - Stable user-facing diagnostic codes and prefilled GitHub feedback.
+- Local automatic subject alignment with bounded analysis images, Worker-based ORB matching, confidence-gated subject disparity estimation, and manual-action cancellation.
+- Automatic alignment now compares Vue-backed stereo state by its raw identity; every task settles within 30 seconds and shares one idempotent Worker/timer cleanup path.
 
 ### Known issues
 

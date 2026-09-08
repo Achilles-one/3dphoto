@@ -72,7 +72,7 @@ Do not commit personal photos or device samples without explicit redistribution 
 - Only one input file is supported; JPG and PNG files must already contain side-by-side or top-bottom views.
 - MPO compatibility is Beta and has not yet been verified against the planned real-device fixture matrix.
 - Automatic layout detection uses image proportions and can be wrong; eye order may need `Swap Eyes`.
-- Alignment is limited to manual horizontal and vertical offsets. Perspective, rotation, lens distortion, and severe scene motion are not corrected.
+- Automatic subject alignment safely fills horizontal and vertical offsets when confidence is sufficient; manual adjustment remains available. Perspective, rotation, scaling, lens distortion, and severe scene motion are not corrected.
 - GIF color and frame-order regression tests use synthetic fixtures; real-photo visual validation is still required.
 - MP4 availability depends on browser WebCodecs H.264 support; 1440, mobile download, and low-memory behavior still require real-device sign-off.
 - MPO-to-PNG export does not preserve the original MPO bytes or all EXIF/ICC metadata.
