@@ -186,6 +186,29 @@ test('exports a 1080 two-frame H.264 MP4 at 25fps @production', async ({ page })
   await exportAndVerify(page, '1080', { width: 972, height: 1080, frames: 50, duration: 2 });
 });
 
+test('initializes the alignment Wasm Worker under the production CSP', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.route(/\/assets\/alignmentWorker-[^/]+\.js$/, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: {
+        ...response.headers(),
+        'content-security-policy': "script-src 'self' 'wasm-unsafe-eval'",
+      },
+    });
+  });
+
+  await page.goto('/');
+  await uploadSyntheticSbs(page);
+  await expect(page.locator('.auto-alignment-status')).toHaveText(
+    /已自动对齐，可继续微调|未能可靠识别主体，请手动调整/,
+    { timeout: 15_000 },
+  );
+  expect(pageErrors.join('\n')).not.toMatch(/WebAssembly\.instantiate|Content Security Policy/i);
+});
+
 test('exports a real 1440 four-frame MP4 with cumulative timing', async ({ page }) => {
   await page.goto('/');
   await openMp4Dialog(page, { speed: 333, intermediate: true });

@@ -1,3 +1,5 @@
+export const ALIGNMENT_WORKER_RUNTIME_VERSION = 'wasm-csp-v1' as const;
+
 export type AutoAlignmentFailureReason =
   | 'insufficient-features'
   | 'insufficient-matches'
@@ -32,6 +34,7 @@ export interface AutoAlignmentFailure {
 export type AutoAlignmentResult = AutoAlignmentSuccess | AutoAlignmentFailure;
 
 export interface AlignmentWorkerRequest {
+  runtimeVersion: typeof ALIGNMENT_WORKER_RUNTIME_VERSION;
   left: ImageData;
   right: ImageData;
   maxOffsetX: number;

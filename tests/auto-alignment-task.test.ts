@@ -10,6 +10,7 @@ import type {
   AlignmentWorkerRequest,
   AlignmentWorkerResponse,
 } from '../src/types/alignment.ts';
+import { ALIGNMENT_WORKER_RUNTIME_VERSION } from '../src/types/alignment.ts';
 import type { StereoSplitResult } from '../src/types/stereo.ts';
 
 class FakeWorker {
@@ -42,6 +43,7 @@ function fixture() {
   };
   const pixels = () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1, colorSpace: 'srgb' }) as ImageData;
   const request: AlignmentWorkerRequest = {
+    runtimeVersion: ALIGNMENT_WORKER_RUNTIME_VERSION,
     left: pixels(), right: pixels(), maxOffsetX: 10, maxOffsetY: 10,
   };
   const task = startAutoAlignmentWorker(worker, request, 0.5, clock);

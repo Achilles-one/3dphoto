@@ -1,7 +1,12 @@
 import cvModule from '@techstark/opencv-js';
 
 import { estimateSubjectAlignment } from '@/core/alignmentEstimate';
-import type { AlignmentMatch, AlignmentWorkerRequest, AlignmentWorkerResponse } from '@/types/alignment';
+import {
+  ALIGNMENT_WORKER_RUNTIME_VERSION,
+  type AlignmentMatch,
+  type AlignmentWorkerRequest,
+  type AlignmentWorkerResponse,
+} from '@/types/alignment';
 
 type OpenCv = typeof cvModule;
 
@@ -73,6 +78,9 @@ function extractMatches(cv: OpenCv, request: AlignmentWorkerRequest): AlignmentM
 self.onmessage = async (event: MessageEvent<AlignmentWorkerRequest>) => {
   let response: AlignmentWorkerResponse;
   try {
+    if (event.data.runtimeVersion !== ALIGNMENT_WORKER_RUNTIME_VERSION) {
+      throw new Error('Alignment Worker runtime version mismatch.');
+    }
     const cv = await getOpenCv();
     const matches = extractMatches(cv, event.data);
     response = matches.length

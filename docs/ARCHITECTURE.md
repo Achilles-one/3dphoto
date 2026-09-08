@@ -79,4 +79,5 @@ App.vue
 - 分析坐标通过共同缩放比例换算回当前 `stereoSplit` 像素，取整后调用 `setAlignment()`；不得生成“已对齐图片”、修改 `StereoSplitResult` 或另建导出参数。现有导出源继续负责把预览偏移映射到原始尺寸。
 - 自动对齐失败是可恢复结果，不进入页面级错误状态，不释放当前图片，也不改变当前偏移。失败原因至少区分特征不足、匹配不足、垂直不一致、主体歧义、偏移越界、结果校验失败、运行失败和 `timeout`。
 - `core/autoAlignment.ts` 必须在任务启动时建立 30 秒超时；超时后终止 Worker、以 `timeout` 结果结算任务并使界面退出运行状态。成功消息、Worker 错误、主动取消和超时路径都必须经过同一个幂等收尾函数，清除超时计时器、解除 Worker 事件处理器并按需终止 Worker，确保 Promise 只结算一次且不遗留计时器、闭包或 Worker 引用。
+- OpenCV.js 在自动对齐 Worker 内实例化 WebAssembly，生产 CSP 的 `script-src` 必须包含范围受限的 `'wasm-unsafe-eval'`，不得用同时开放 JavaScript 动态执行的 `'unsafe-eval'` 替代。主线程请求与 Worker 校验共享显式运行时协议版本；Wasm 或 CSP 运行边界发生变化时必须更新该版本，使版本值进入 Worker 构建内容并触发新的 Vite 内容哈希，避免旧的 immutable Worker 响应继续携带过期安全头。
 - 主动取消必须同时清除计时器并让等待中的任务结束；调用方仍通过 generation 忽略取消后的结果。任何保护条件拒绝提交结果时，也必须清理仍属于该任务的活动引用和运行状态，不能让界面永久停留在 `running`。
