@@ -6,6 +6,10 @@ import { ALL_FORMATS, BlobSource, EncodedPacketSink, Input } from 'mediabunny';
 
 const SYNTHETIC_WIDTH = 2880;
 const SYNTHETIC_HEIGHT = 1600;
+const SYNTHETIC_SOURCE_SHIFT_X = -36;
+const SYNTHETIC_SOURCE_SHIFT_Y = -18;
+const SYNTHETIC_PREVIEW_ALIGNMENT_X = -15;
+const SYNTHETIC_PREVIEW_ALIGNMENT_Y = -8;
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -38,10 +42,18 @@ function createSyntheticSbsPng() {
     for (let x = 0; x < SYNTHETIC_WIDTH; x += 1) {
       const offset = row + 1 + x * 4;
       const isRight = x >= SYNTHETIC_WIDTH / 2;
-      const stripe = ((x + y) >> 6) % 2 === 0 ? 20 : 0;
-      pixels[offset] = isRight ? 45 + stripe : 215 + stripe;
-      pixels[offset + 1] = isRight ? 115 + stripe : 70 + stripe;
-      pixels[offset + 2] = isRight ? 205 + stripe : 55 + stripe;
+      const localX = x % (SYNTHETIC_WIDTH / 2);
+      const sourceX = localX + (isRight ? SYNTHETIC_SOURCE_SHIFT_X : 0);
+      const sourceY = y + (isRight ? SYNTHETIC_SOURCE_SHIFT_Y : 0);
+      const cellX = Math.floor(sourceX / 12);
+      const cellY = Math.floor(sourceY / 12);
+      let hash = Math.imul(cellX, 0x1f123bb5) ^ Math.imul(cellY, 0x5f356495);
+      hash = Math.imul(hash ^ (hash >>> 15), 0x2c1b3c6d);
+      hash = Math.imul(hash ^ (hash >>> 12), 0x297a2d39);
+      const value = (hash ^ (hash >>> 15)) & 255;
+      pixels[offset] = value;
+      pixels[offset + 1] = (value * 3 + 41) & 255;
+      pixels[offset + 2] = 255 - value;
       pixels[offset + 3] = 255;
     }
   }
@@ -186,7 +198,7 @@ test('exports a 1080 two-frame H.264 MP4 at 25fps @production', async ({ page })
   await exportAndVerify(page, '1080', { width: 972, height: 1080, frames: 50, duration: 2 });
 });
 
-test('initializes the alignment Wasm Worker under the production CSP', async ({ page }) => {
+test('aligns a known translated subject under the production CSP', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.route(/\/assets\/alignmentWorker-[^/]+\.js$/, async (route) => {
@@ -202,10 +214,13 @@ test('initializes the alignment Wasm Worker under the production CSP', async ({ 
 
   await page.goto('/');
   await uploadSyntheticSbs(page);
-  await expect(page.locator('.auto-alignment-status')).toHaveText(
-    /已自动对齐，可继续微调|未能可靠识别主体，请手动调整/,
-    { timeout: 15_000 },
-  );
+  await expect(page.locator('.auto-alignment-status')).toHaveText('已自动对齐，可继续微调', { timeout: 15_000 });
+  const alignmentX = Number(await page.getByLabel('水平偏移').inputValue());
+  const alignmentY = Number(await page.getByLabel('垂直偏移').inputValue());
+  expect(alignmentX).toBeGreaterThanOrEqual(SYNTHETIC_PREVIEW_ALIGNMENT_X - 2);
+  expect(alignmentX).toBeLessThanOrEqual(SYNTHETIC_PREVIEW_ALIGNMENT_X + 2);
+  expect(alignmentY).toBeGreaterThanOrEqual(SYNTHETIC_PREVIEW_ALIGNMENT_Y - 2);
+  expect(alignmentY).toBeLessThanOrEqual(SYNTHETIC_PREVIEW_ALIGNMENT_Y + 2);
   expect(pageErrors.join('\n')).not.toMatch(/WebAssembly\.instantiate|Content Security Policy/i);
 });
 

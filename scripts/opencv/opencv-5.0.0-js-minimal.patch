@@ -1,0 +1,13 @@
+diff --git a/modules/js/src/core_bindings.cpp b/modules/js/src/core_bindings.cpp
+index edd2a66519..f63efba0ce 100644
+--- a/modules/js/src/core_bindings.cpp
++++ b/modules/js/src/core_bindings.cpp
+@@ -87,8 +87,6 @@ using namespace emscripten;
+ using namespace cv;
+ 
+-using namespace cv::segmentation;  // FIXIT
+-
+ #ifdef HAVE_OPENCV_OBJDETECT
+ using namespace cv::aruco;
+ typedef aruco::DetectorParameters aruco_DetectorParameters;
+ typedef QRCodeDetectorAruco::Params QRCodeDetectorAruco_Params;

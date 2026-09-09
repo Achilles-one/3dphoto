@@ -73,11 +73,14 @@ App.vue
 - `App.vue` 负责启动、取消和提交自动对齐任务；`useAppState()` 继续只通过现有 `setAlignment()` 管理序列化后的水平、垂直偏移。对齐预览组件只显示画布和瞬时状态，不拥有算法任务。
 - `core/autoAlignment.ts` 负责建立有界分析输入、创建 Worker、换算坐标和释放临时资源；`workers/alignmentWorker.ts` 负责图像预处理、特征匹配、稳健估计、主体视差聚类与置信度判断。算法消息类型独立放在 `types/alignment.ts`。
 - 左右眼使用同一个分析缩放比例，最长边不超过 640px；不得分别拉伸到相同尺寸。JPG/PNG 可以复用现有降采样拆分结果，完整尺寸 MPO 必须建立临时分析画布，不能替换原始 `StereoView.canvas`。
-- 第一版使用本地、同源、懒加载的 OpenCV.js/WASM 提供 ORB 与 Hamming 特征匹配能力；分析在 Worker 中完成，不依赖 CDN、不上传图片，不把完整原始尺寸像素复制进 Worker。引入的构建产物、许可证、缓存和发布校验必须随实现一并确认。
+- 自动对齐使用本地、同源、懒加载的 CSP-safe OpenCV.js/WASM 提供 ORB 与 Hamming 特征匹配能力；分析在 Worker 中完成，不依赖 CDN、不上传图片，不把完整原始尺寸像素复制进 Worker。必须先完成并验证自定义 OpenCV 构建，再替换 Worker 加载器，不能先修改 Worker 后继续依赖不确定的预编译产物。
+- 自定义 OpenCV.js 构建只保留当前需要的 `core`、`imgproc`、`features2d` 与对应 ORB/BFMatcher 绑定；只有后续确实引入基础矩阵或 RANSAC API 时才增加 `calib3d`。首个生产基线固定为 OpenCV `5.0.0`（源码 tag `5.0.0`）+ Emscripten/emsdk `4.0.20` + C++17，构建环境固定使用官方 `emscripten/emsdk:4.0.20` 镜像；首次成功构建时把镜像 digest 写入构建清单。构建必须启用 `DYNAMIC_EXECUTION=0` 与 `EMBIND_AOT=1`，采用模块化 ES Module Worker 输出，并生成独立 `.wasm` 资源。不得使用浮动 `latest`、自动升级版本或在构建失败时静默换用其他组合；确需升级时必须单独修改版本、重新执行严格 CSP 与算法回归并更新文档。
+- 自定义构建采用“可复现配方和已生成产物都入库”的方式：Docker 构建定义与命令放在 `scripts/opencv/`，运行时产物固定放在 `src/vendor/opencv/5.0.0/`，至少包含 `opencv.mjs`、`opencv.wasm`、OpenCV 许可证/第三方声明、记录源码 tag、工具链、镜像 tag/digest、模块和完整编译参数的构建清单，以及产物 SHA-256。常规 `npm`、Vite、CI 和 Vercel 构建只消费并校验这些已提交产物，不下载源码、不安装 emsdk，也不现场编译 OpenCV；版本升级通过显式重新生成和审查产物完成。
+- 自定义产物接入后，`workers/alignmentWorker.ts` 只调整 OpenCV 模块工厂、`.wasm` URL 定位和初始化错误分类；现有灰度、ORB、BFMatcher、匹配过滤与主体偏移估计流程保持不变。Vite 必须把 `.wasm` 作为带内容哈希的本地资源发布，服务端返回 `application/wasm`。构建和发布检查必须校验构建清单、SHA-256、Apache-2.0 许可证与第三方声明、缓存策略和最终资源引用。
 - 匹配流程为灰度预处理、ORB、双向 KNN 匹配、比值过滤和交叉验证。全局垂直偏移通过稳健一致集合估计；水平偏移从空间集中且视差一致的主要主体候选中取稳健中位数。不得用全图 Homography、全图 ECC 或单一全图平均视差替代这一语义。
 - 可在主体局部区域使用仅平移的 ZNCC 或 ECC 精调，但精调只能接受相关性提高且仍满足合法范围的结果，不能改变第一版仅支持 X/Y 平移的产品边界。
 - 分析坐标通过共同缩放比例换算回当前 `stereoSplit` 像素，取整后调用 `setAlignment()`；不得生成“已对齐图片”、修改 `StereoSplitResult` 或另建导出参数。现有导出源继续负责把预览偏移映射到原始尺寸。
 - 自动对齐失败是可恢复结果，不进入页面级错误状态，不释放当前图片，也不改变当前偏移。失败原因至少区分特征不足、匹配不足、垂直不一致、主体歧义、偏移越界、结果校验失败、运行失败和 `timeout`。
 - `core/autoAlignment.ts` 必须在任务启动时建立 30 秒超时；超时后终止 Worker、以 `timeout` 结果结算任务并使界面退出运行状态。成功消息、Worker 错误、主动取消和超时路径都必须经过同一个幂等收尾函数，清除超时计时器、解除 Worker 事件处理器并按需终止 Worker，确保 Promise 只结算一次且不遗留计时器、闭包或 Worker 引用。
-- OpenCV.js 在自动对齐 Worker 内实例化 WebAssembly，生产 CSP 的 `script-src` 必须包含范围受限的 `'wasm-unsafe-eval'`，不得用同时开放 JavaScript 动态执行的 `'unsafe-eval'` 替代。主线程请求与 Worker 校验共享显式运行时协议版本；Wasm 或 CSP 运行边界发生变化时必须更新该版本，使版本值进入 Worker 构建内容并触发新的 Vite 内容哈希，避免旧的 immutable Worker 响应继续携带过期安全头。
+- OpenCV.js 在自动对齐 Worker 内实例化 WebAssembly，CSP-safe 构建接入后的生产自动对齐 Worker 响应 CSP 必须包含范围受限的 `'wasm-unsafe-eval'`，不得包含 `'unsafe-eval'`；首页和其他不实例化 Wasm 的脚本继续使用 `script-src 'self'`。构建产物和严格 CSP 下的运行测试必须共同证明没有执行 `eval()` 或 `new Function()`；仅设置编译参数或静态搜索字符串不能单独作为通过依据。主线程请求与 Worker 校验共享显式运行时协议版本；OpenCV 构建、Wasm 或 CSP 运行边界发生变化时必须更新该版本，使版本值进入 Worker 构建内容并触发新的 Vite 内容哈希，避免旧的 immutable Worker 响应继续携带过期安全头。
 - 主动取消必须同时清除计时器并让等待中的任务结束；调用方仍通过 generation 忽略取消后的结果。任何保护条件拒绝提交结果时，也必须清理仍属于该任务的活动引用和运行状态，不能让界面永久停留在 `running`。

@@ -111,7 +111,9 @@ Vercel 项目建议配置：
 
 仓库已使用根目录 `vercel.json` 声明 Vercel 的构建、缓存和基础安全响应头；Cloudflare/Sites 遗留的 `_headers`、`wrangler.toml`、Sites Worker 与项目元数据均已移除。
 
-自动主体对齐在 Worker 内使用 OpenCV.js WebAssembly，因此首页与 `/assets/` 响应的 CSP 必须包含 `script-src 'self' 'wasm-unsafe-eval'`；不得改用权限更宽的 `'unsafe-eval'`。主线程请求与自动对齐 Worker 共享显式运行时协议版本；CSP/Wasm 运行边界变更时更新该版本，使 Worker 内容哈希随之变化并绕过已经缓存一年的旧响应。部署后必须同时检查首页和 `alignmentWorker-*.js` 的实际 CSP，并用真实 SBS 或 MPO 初始化一次自动对齐。
+自动主体对齐在 Worker 内使用 OpenCV.js WebAssembly。首个生产基线固定为 OpenCV `5.0.0` + Emscripten/emsdk `4.0.20` + C++17，并以官方 `emscripten/emsdk:4.0.20` 镜像生成启用 `DYNAMIC_EXECUTION=0`、`EMBIND_AOT=1` 的 CSP-safe OpenCV.js/WASM。构建配方存放在 `scripts/opencv/`，已生成的模块、独立 Wasm、许可证、构建清单和 SHA-256 存放在 `src/vendor/opencv/5.0.0/` 并提交 Git；常规 CI/Vercel 不现场编译 OpenCV，只校验和消费仓库产物。必须先单独验证该产物的 ORB/BFMatcher API，再修改 Worker 加载模块工厂与本地 `.wasm` URL；迁移完成前不得把预编译包的 `runtime-failure` 误判为“未识别主体”。迁移后的首页和普通脚本继续使用 `script-src 'self'`，只有自动对齐 Worker 响应 CSP 增加 `'wasm-unsafe-eval'`，所有响应均不得包含 `'unsafe-eval'`；`.wasm` 必须返回 `application/wasm`。Vercel 中 Worker 专用响应头规则必须比通用规则更具体并在部署后核对实际响应。主线程请求与自动对齐 Worker 共享显式运行时协议版本；OpenCV/CSP/Wasm 边界变更时更新该版本，使 Worker 内容哈希随之变化并绕过旧响应。
+
+发布顺序固定为：用冻结工具链生成 CSP-safe OpenCV 产物并记录镜像 digest、构建清单和 SHA-256 → 单独验证所需 API → 接入 Worker 模块工厂和 `.wasm` 定位 → 更新运行时协议版本 → 执行分类自动对齐测试 → 检查构建产物和 CSP → 部署 Preview。Preview 和 Production 都必须使用已知成功样本确认自动结果实际写入 `alignmentX/Y`，不能只检查状态文本结束；低纹理或无明确主体样本则确认返回允许的业务安全失败并保留手动流程。
 
 2026-08-13 实测：
 
@@ -157,7 +159,7 @@ npm run smoke:deployment -- https://www.achillescat.com
 还需人工确认：
 
 - 首页和静态资源成功加载。
-- 页面没有生产控制台错误；自动对齐 Worker 能在生产 CSP 下完成初始化，不出现 `WebAssembly.instantiate()` CSP 错误。
+- 页面没有生产控制台错误；自动对齐 Worker 能在不开放 `'unsafe-eval'` 的生产 CSP 下完成初始化和一次已知成功对齐，不出现 `WebAssembly.instantiate()`、`eval()` 或 `new Function()` CSP 错误。
 - 移动端无横向滚动。
 - GIF Worker 能完成最小导出；MP4 Worker 资源可加载且响应头正确。
 - 在支持 WebCodecs H.264 的浏览器中完成一次 MP4 下载，并确认视频无音频、25fps、尺寸为偶数；不支持时确认 MP4 明确禁用且 GIF 可用。

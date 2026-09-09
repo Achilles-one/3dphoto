@@ -54,7 +54,13 @@ CSS 只有同时满足以下条件，才可标记为“已收敛”：
 
 异步测试必须覆盖上传时的“Vue 响应式代理与原始 `stereoSplit`”以及布局切换后的“当前状态代理与任务输入代理”两种身份校验，证明两侧经 `toRaw()` 解包后有效结果不会被误判为过期；使用可控 Worker 和假计时器验证 30 秒前不超时、达到 30 秒返回 `timeout`，并分别断言成功、Worker 错误、主动取消和超时都只结算一次、清除计时器、终止或释放 Worker，且 `running` 状态结束。
 
-生产构建检查必须验证 CSP 同时保留 `script-src 'self'`、加入 `'wasm-unsafe-eval'` 且不包含 `'unsafe-eval'`，并验证自动对齐 Worker 构建内容带有当前 Wasm CSP 运行时协议版本。Preview/Production 验收必须在实际响应头下初始化一次自动对齐 Worker；仅确认 Worker 文件存在不视为通过。
+生产构建检查必须验证自动对齐 Worker 使用冻结的 OpenCV `5.0.0` + Emscripten/emsdk `4.0.20` CSP-safe OpenCV.js/WASM，核对 `src/vendor/opencv/5.0.0/` 中的构建清单和 SHA-256，并确认常规 CI/Vercel 没有重新下载或编译 OpenCV。首页和普通脚本维持 `script-src 'self'`，自动对齐 Worker 响应 CSP 额外加入 `'wasm-unsafe-eval'` 且不包含 `'unsafe-eval'`；`.wasm` 使用内容哈希且响应类型为 `application/wasm`，Worker 构建内容带有当前运行时协议版本。Preview/Production 验收必须在实际响应头下初始化并执行一次自动对齐；仅确认 Worker 文件存在、任务结束或界面退出 `running` 均不视为通过。
+
+自动对齐验收必须按输入预期分类：
+
+- 已知可成功的确定性合成样本必须返回 `ok: true`，并断言 `alignmentX/Y` 在预期容差内；`runtime-failure`、`timeout` 或任意业务失败都使该检查失败。该用例负责证明 OpenCV 初始化、Wasm、CSP、Worker 消息和结果提交整条链路可用。
+- 低纹理、匹配不足、重复纹理或无明确主体样本允许快速返回 `insufficient-features`、`insufficient-matches`、`vertical-inconsistency`、`subject-ambiguity`、`offset-out-of-range` 或 `validation-failed`，并必须保留手动调节。上述业务安全失败不应导致发布检查失败，但不得返回 `runtime-failure` 或非专门超时测试中的 `timeout`。
+- 运行异常与超时使用独立负向测试，分别明确期望 `runtime-failure` 与 `timeout`。Worker 内部必须把 CSP/Wasm 初始化失败与普通“未识别主体”区分记录，UI 可以继续显示非阻断通用提示，但测试和安全诊断必须能够读取稳定失败原因。
 
 ## 6. MP4 自动化门禁
 

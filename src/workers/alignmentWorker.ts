@@ -1,4 +1,5 @@
-import cvModule from '@techstark/opencv-js';
+import createOpenCv from '@/vendor/opencv/5.0.0/opencv.mjs';
+import openCvWasmUrl from '@/vendor/opencv/5.0.0/opencv.wasm?url';
 
 import { estimateSubjectAlignment } from '@/core/alignmentEstimate';
 import {
@@ -8,13 +9,15 @@ import {
   type AlignmentWorkerResponse,
 } from '@/types/alignment';
 
-type OpenCv = typeof cvModule;
+type OpenCv = Awaited<ReturnType<typeof createOpenCv>>;
+
+let openCvPromise: Promise<OpenCv> | null = null;
 
 async function getOpenCv(): Promise<OpenCv> {
-  const candidate = await cvModule;
-  if (candidate.Mat) return candidate;
-  await new Promise<void>((resolve) => { candidate.onRuntimeInitialized = resolve; });
-  return candidate;
+  openCvPromise ??= createOpenCv({
+    locateFile: (path: string) => path.endsWith('.wasm') ? openCvWasmUrl : path,
+  });
+  return openCvPromise;
 }
 
 function extractMatches(cv: OpenCv, request: AlignmentWorkerRequest): AlignmentMatch[] {

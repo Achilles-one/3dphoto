@@ -1,4 +1,4 @@
-export const ALIGNMENT_WORKER_RUNTIME_VERSION = 'wasm-csp-v1' as const;
+export const ALIGNMENT_WORKER_RUNTIME_VERSION = 'opencv-5.0.0-csp-v2' as const;
 
 export type AutoAlignmentFailureReason =
   | 'insufficient-features'

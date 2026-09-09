@@ -1,6 +1,6 @@
 # 项目状态
 
-更新时间：2026-09-08
+更新时间：2026-09-09
 
 ## Now
 
@@ -22,11 +22,12 @@
 - SBS PNG 输出顺序遵循当前 `Swap Eyes` 设置。
 - `SiteHeader`、舞台内上传、静态指南和隐私设置已纳入当前页面。
 - `docs/design/DESIGN_CONCEPTS.md` 已确定为 v1 已批准设计概念基线并纳入 Git。
-- 浏览器本地自动主体对齐已实现：有界分析图、Worker 内 ORB 双向匹配、全局垂直稳健估计、主体视差聚类、置信度安全失败和手动操作优先；有效结果使用原始 `stereoSplit` 身份提交，任务在 30 秒超时，并统一清理计时器、事件处理器和 Worker。
+- 浏览器本地自动主体对齐已使用仓库内 OpenCV `5.0.0` CSP-safe ES Module/Wasm：有界分析图、Worker 内 ORB 双向匹配、全局垂直稳健估计、主体视差聚类、置信度安全失败和手动操作优先；有效结果使用原始 `stereoSplit` 身份提交，任务在 30 秒超时，并统一清理计时器、事件处理器和 Worker。首页维持 `script-src 'self'`，只有带哈希的自动对齐 Worker 响应允许 `'wasm-unsafe-eval'`。
 
 ## Next
 
 - 完成真实 Weeview 与 FUJIFILM 样本的设备矩阵验收。
+- 在 Vercel Preview 和 Production 的真实响应头下分别用已知成功 SBS/MPO 样本确认自动对齐及 `alignmentX/Y` 写入，并核对 Worker CSP 与 Wasm MIME。
 - 按 `COMPATIBILITY.md` 完成移动端下载和低内存设备签收。
 - 维护已收敛的 CSS 结构；只有发生视觉基线变更时，才更新设计系统或页面规格。
 

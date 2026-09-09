@@ -1,0 +1,21 @@
+{
+  "opencv": {
+    "tag": "5.0.0",
+    "commit": "40738fb16ceddb5fb3fea747585f7ce6abb0605b"
+  },
+  "emsdk": "4.0.20",
+  "docker": {
+    "baseImage": "emscripten/emsdk:4.0.20@sha256:460fff8f8ac87e11b16447fbd66538a686eafa0e4fb977aa0989ed19fe2079f7"
+  },
+  "language": "C++17",
+  "requestedModules": ["core", "imgproc", "features", "js"],
+  "boundApis": ["Algorithm", "cvtColor", "Feature2D.detectAndCompute", "ORB.create", "DescriptorMatcher.knnMatch", "BFMatcher.create"],
+  "sourcePatch": "scripts/opencv/opencv-5.0.0-js-minimal.patch",
+  "buildCommand": "python3 platforms/js/build_js.py /opt/opencv-build --opencv_dir /opt/opencv --build_wasm --disable_single_file --config /opt/opencv-csp/opencv_js.config.py --cmake_option=-DCMAKE_BUILD_TYPE=Release --cmake_option=-DCMAKE_CXX_STANDARD=17 --cmake_option=-DCMAKE_CXX_STANDARD_REQUIRED=ON --cmake_option=-DBUILD_LIST=core,imgproc,features,js --cmake_option=-DBUILD_opencv_calib3d=OFF --cmake_option=-DBUILD_SHARED_LIBS=OFF --cmake_option=-DBUILD_TESTS=OFF --cmake_option=-DBUILD_PERF_TESTS=OFF --cmake_option=-DBUILD_EXAMPLES=OFF --cmake_option=-DBUILD_DOCS=OFF --cmake_option=-DEMSCRIPTEN_LINK_FLAGS=-O3 -s EXPORT_ES6=1 -s DYNAMIC_EXECUTION=0 -s EMBIND_AOT=1 -s ENVIRONMENT=worker --build_flags=-O3",
+  "sha256": {
+    "opencv.mjs": "3e6e30f1c170c1567c9cf605e6a55de1e1412635485363f9bf324c6bd19817b1",
+    "opencv.wasm": "785c554575eb8c773dd27d82549e3a153ea1dcb911e0e70dc9fd13f888ea0218",
+    "LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "THIRD_PARTY_NOTICES.txt": "8d8e43e62f86cc99bc81d832410f58f8ae9264b85c9e757d698ea72aa8691b64"
+  }
+}
